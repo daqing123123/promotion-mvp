@@ -1,25 +1,29 @@
 const { createClient } = require('@supabase/supabase-js')
 
-const supabase = createClient(
-  'https://clmeiafkywkyyizmojrc.supabase.co',
-  'sb_publishable_wp4i09aTpoPMVFgM-ifIzQ_KLg_tAHP'
-)
+// ⚠️ 种子脚本用 service_role key，绕过 RLS
+// 从 Supabase Dashboard → Settings → API 获取 service_role key
+const SUPABASE_URL = 'https://clmeiafkywkyyizmojrc.supabase.co'
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || 'YOUR_SERVICE_ROLE_KEY'
+
+const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+  auth: { autoRefreshToken: false, persistSession: false }
+})
 
 async function seed() {
   console.log('🌱 Seeding...')
 
   // ===== 用户 =====
   const users = [
-    { username: 'chenxiaoyu', name: '陈小雨', avatar: '🌊', bio: '独立开发者，做了3个小工具', tags: ['独立开发','效率工具'], points: 3200, level: 25, follower_count: 890, following_count: 120, published_count: 12, total_likes: 45000 },
-    { username: 'linmomo', name: '林默默', avatar: '🎧', bio: '音乐博主，专注独立音乐', tags: ['独立音乐','乐评'], points: 2100, level: 20, follower_count: 670, following_count: 89, published_count: 8, total_likes: 28000 },
-    { username: 'zhangdapeng', name: '张大鹏', avatar: '🎮', bio: '游戏主播，主攻恐怖游戏', tags: ['游戏','恐怖'], points: 1800, level: 18, follower_count: 456, following_count: 78, published_count: 6, total_likes: 15000 },
-    { username: 'wangshushu', name: '王书书', avatar: '📚', bio: '读书博主，一年读100本', tags: ['读书','书评'], points: 950, level: 12, follower_count: 321, following_count: 45, published_count: 5, total_likes: 8900 },
-    { username: 'liumei', name: '刘美丽', avatar: '🌸', bio: '城中村美食探索者', tags: ['美食','城中村'], points: 1500, level: 16, follower_count: 1200, following_count: 150, published_count: 15, total_likes: 56000 },
+    { username: 'chenxiaoyu', name: '陈小雨', avatar: '🌊', bio: '独立开发者，做了3个小工具', tags: ['独立开发','效率工具'], points: 3200, level: 25, experience: 5000, follower_count: 890, following_count: 120, published_count: 12, total_likes: 45000 },
+    { username: 'linmomo', name: '林默默', avatar: '🎧', bio: '音乐博主，专注独立音乐', tags: ['独立音乐','乐评'], points: 2100, level: 20, experience: 3000, follower_count: 670, following_count: 89, published_count: 8, total_likes: 28000 },
+    { username: 'zhangdapeng', name: '张大鹏', avatar: '🎮', bio: '游戏主播，主攻恐怖游戏', tags: ['游戏','恐怖'], points: 1800, level: 18, experience: 2500, follower_count: 456, following_count: 78, published_count: 6, total_likes: 15000 },
+    { username: 'wangshushu', name: '王书书', avatar: '📚', bio: '读书博主，一年读100本', tags: ['读书','书评'], points: 950, level: 12, experience: 800, follower_count: 321, following_count: 45, published_count: 5, total_likes: 8900 },
+    { username: 'liumei', name: '刘美丽', avatar: '🌸', bio: '城中村美食探索者', tags: ['美食','城中村'], points: 1500, level: 16, experience: 1800, follower_count: 1200, following_count: 150, published_count: 15, total_likes: 56000 },
   ]
 
   const insertedUsers = []
   for (const u of users) {
-    const { data, error } = await supabase.from('users').insert(u).select().single()
+    const { data, error } = await supabase.from('users').upsert(u, { onConflict: 'username' }).select().single()
     if (error) { console.log('❌ User:', u.username, error.message); continue }
     insertedUsers.push(data)
     console.log('✅ User:', data.name)
@@ -35,10 +39,26 @@ async function seed() {
 
   const insertedTopics = []
   for (const t of topics) {
-    const { data, error } = await supabase.from('topics').insert(t).select().single()
+    const { data, error } = await supabase.from('topics').upsert(t, { onConflict: 'title' }).select().single()
     if (error) { console.log('❌ Topic:', t.title, error.message); continue }
     insertedTopics.push(data)
     console.log('✅ Topic:', data.title)
+  }
+
+  // ===== 内容 =====
+  const contents = [
+    { type: 'skill', title: 'AI写作助手', description: '一键润色你的文章，支持中英文', cover_url: 'https://picsum.photos/seed/ai-write/400/300', tags: ['AI','写作','效率'], creator_id: insertedUsers[0]?.id, render_mode: 'installable', like_count: 3400, view_count: 28000, comment_count: 567, share_count: 1200, favorite_count: 890, promote_count: 450 },
+    { type: 'game', title: '深夜医院', description: '恐怖探索游戏，你是值班护士，但医院里只有你一个人', cover_url: 'https://picsum.photos/seed/horror-game/400/300', tags: ['游戏','恐怖','独立游戏'], creator_id: insertedUsers[2]?.id, render_mode: 'embed', like_count: 5600, view_count: 45000, comment_count: 890, share_count: 2300, favorite_count: 1800, promote_count: 900 },
+    { type: 'music', title: '凌晨三点的便利店', description: '独立音乐人新单曲，写给每个深夜还在加班的人', cover_url: 'https://picsum.photos/seed/indie-music/400/300', tags: ['音乐','独立音乐','治愈'], creator_id: insertedUsers[1]?.id, render_mode: 'player', like_count: 8900, view_count: 67000, comment_count: 1200, share_count: 3400, favorite_count: 4500, promote_count: 1200 },
+    { type: 'product', title: '磁吸充电宝', description: '5000mAh，MagSafe兼容，出门再也不怕没电', cover_url: 'https://picsum.photos/seed/powerbank/400/300', tags: ['数码','充电宝','好物'], creator_id: insertedUsers[4]?.id, render_mode: 'card', like_count: 2100, view_count: 18000, comment_count: 340, share_count: 890, favorite_count: 670, promote_count: 2300 },
+  ]
+
+  const insertedContents = []
+  for (const c of contents) {
+    const { data, error } = await supabase.from('contents').upsert(c, { onConflict: 'title' }).select().single()
+    if (error) { console.log('❌ Content:', c.title, error.message); continue }
+    insertedContents.push(data)
+    console.log('✅ Content:', data.title)
   }
 
   // ===== 梗 =====
@@ -50,23 +70,34 @@ async function seed() {
   ]
 
   for (const m of memes) {
-    const { data, error } = await supabase.from('memes').insert(m).select().single()
+    const { data, error } = await supabase.from('memes').upsert(m, { onConflict: 'title' }).select().single()
     if (error) { console.log('❌ Meme:', m.title, error.message); continue }
     console.log('✅ Meme:', data.title)
   }
 
-  // ===== 内容 =====
-  const contents = [
-    { type: 'skill', title: 'AI写作助手', description: '一键润色你的文章，支持中英文', cover_url: 'https://picsum.photos/seed/ai-write/400/300', tags: ['AI','写作','效率'], creator_id: insertedUsers[0]?.id, render_mode: 'installable', like_count: 3400, view_count: 28000, comment_count: 567, share_count: 1200, favorite_count: 890, promote_count: 450 },
-    { type: 'game', title: '深夜医院', description: '恐怖探索游戏，你是值班护士，但医院里只有你一个人', cover_url: 'https://picsum.photos/seed/horror-game/400/300', tags: ['游戏','恐怖','独立游戏'], creator_id: insertedUsers[2]?.id, render_mode: 'embed', like_count: 5600, view_count: 45000, comment_count: 890, share_count: 2300, favorite_count: 1800, promote_count: 900 },
-    { type: 'music', title: '凌晨三点的便利店', description: '独立音乐人新单曲，写给每个深夜还在加班的人', cover_url: 'https://picsum.photos/seed/indie-music/400/300', tags: ['音乐','独立音乐','治愈'], creator_id: insertedUsers[1]?.id, render_mode: 'player', like_count: 8900, view_count: 67000, comment_count: 1200, share_count: 3400, favorite_count: 4500, promote_count: 1200 },
-    { type: 'product', title: '磁吸充电宝', description: '5000mAh，MagSafe兼容，出门再也不怕没电', cover_url: 'https://picsum.photos/seed/powerbank/400/300', tags: ['数码','充电宝','好物'], creator_id: insertedUsers[4]?.id, render_mode: 'card', like_count: 2100, view_count: 18000, comment_count: 340, share_count: 890, favorite_count: 670, promote_count: 2300 },
-  ]
-
-  for (const c of contents) {
-    const { data, error } = await supabase.from('contents').insert(c).select().single()
-    if (error) { console.log('❌ Content:', c.title, error.message); continue }
-    console.log('✅ Content:', data.title)
+  // ===== 投票 =====
+  if (insertedTopics[2]) {
+    const votes = [
+      {
+        topic_id: insertedTopics[2].id,
+        title: '你的桌面最值钱的东西是？',
+        description: '晒桌面话题投票',
+        options: JSON.stringify([
+          { text: '显示器', emoji: '🖥️' },
+          { text: '键盘', emoji: '⌨️' },
+          { text: '椅子', emoji: '🪑' },
+          { text: '手办/摆件', emoji: '🎮' },
+        ]),
+        vote_count: 128,
+        status: 'active',
+        end_date: new Date(now + 3*86400000).toISOString(),
+      },
+    ]
+    for (const v of votes) {
+      const { data, error } = await supabase.from('votes').upsert(v, { onConflict: 'title' }).select().single()
+      if (error) { console.log('❌ Vote:', v.title, error.message); continue }
+      console.log('✅ Vote:', data.title)
+    }
   }
 
   // ===== 通知 =====
@@ -81,6 +112,33 @@ async function seed() {
       if (error) console.log('❌ Notif:', error.message)
     }
     console.log('✅ Notifications: 3')
+  }
+
+  // ===== 帮推记录 =====
+  if (insertedUsers[1] && insertedContents[0]) {
+    const promotes = [
+      { user_id: insertedUsers[1].id, content_id: insertedContents[0].id, points_earned: 20 },
+      { user_id: insertedUsers[2].id, content_id: insertedContents[0].id, points_earned: 20 },
+      { user_id: insertedUsers[3].id, content_id: insertedContents[1].id, points_earned: 20 },
+    ]
+    for (const p of promotes) {
+      const { error } = await supabase.from('promotes').upsert(p, { onConflict: 'user_id,content_id' })
+      if (error) console.log('❌ Promote:', error.message)
+    }
+    console.log('✅ Promotes: 3')
+  }
+
+  // ===== 成就 =====
+  if (insertedUsers[0]) {
+    const achievements = [
+      { user_id: insertedUsers[0].id, achievement_id: 'first_publish', name: '初出茅庐', description: '首次发布内容', icon: '🚀', category: 'create', points_earned: 50 },
+      { user_id: insertedUsers[0].id, achievement_id: 'first_promote', name: '热心肠', description: '首次帮推', icon: '🤝', category: 'promote', points_earned: 50 },
+    ]
+    for (const a of achievements) {
+      const { error } = await supabase.from('user_achievements').upsert(a, { onConflict: 'user_id,achievement_id' })
+      if (error) console.log('❌ Achievement:', error.message)
+    }
+    console.log('✅ Achievements: 2')
   }
 
   console.log('\n🎉 Done!')
