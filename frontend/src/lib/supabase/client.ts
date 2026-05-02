@@ -361,17 +361,39 @@ export async function earnPoints(userId: string, amount: number, type: string, d
   const newPoints = user.points + amount
   const newExp = (user.experience || 0) + amount
 
+  // 指数等级系统：base=10, multiplier=1.15
+  // 1→2级：10XP, 50级：~90K累计, 75级：~5.7M累计, 100级：不可达
   let newLevel = 1
   let totalRequired = 0
   for (let i = 1; i <= 100; i++) {
-    totalRequired += Math.floor(10 * Math.pow(1.08, i - 1))
+    totalRequired += Math.floor(10 * Math.pow(1.15, i - 1))
     if (newExp >= totalRequired) newLevel = i
     else break
   }
+  newLevel = Math.min(newLevel, 100)
+
+  // 升级奖励
+  const oldLevel = user.level || 1
+  let levelUpBonus = 0
+  if (newLevel > oldLevel) {
+    for (let lv = oldLevel + 1; lv <= newLevel; lv++) {
+      if (lv >= 90) levelUpBonus += 5000
+      else if (lv >= 75) levelUpBonus += 2000
+      else if (lv >= 60) levelUpBonus += 1000
+      else if (lv >= 45) levelUpBonus += 500
+      else if (lv >= 30) levelUpBonus += 300
+      else if (lv >= 20) levelUpBonus += 200
+      else if (lv >= 10) levelUpBonus += 100
+      else if (lv >= 5) levelUpBonus += 50
+      else levelUpBonus += 20
+    }
+  }
+
+  const finalPoints = newPoints + levelUpBonus
 
   await supabase
     .from('users')
-    .update({ points: newPoints, level: newLevel, experience: newExp })
+    .update({ points: finalPoints, level: newLevel, experience: newExp })
     .eq('id', userId)
 
   await supabase.from('point_logs').insert({
@@ -381,7 +403,16 @@ export async function earnPoints(userId: string, amount: number, type: string, d
     description,
   })
 
-  return { points: newPoints, level: newLevel, experience: newExp }
+  if (levelUpBonus > 0) {
+    await supabase.from('point_logs').insert({
+      user_id: userId,
+      amount: levelUpBonus,
+      type: 'level_up',
+      description: `升级到 Lv.${newLevel} 奖励`,
+    })
+  }
+
+  return { points: finalPoints, level: newLevel, experience: newExp, levelUpBonus, oldLevel, newLevel }
 }
 
 export async function spendPoints(userId: string, amount: number, type: string, description: string) {

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase/client'
-import { getLevelTitle, getLevelColor, getLevelProgress } from '../lib/rewardSystem'
+import { levelTitle, levelProgress as calcLevelProgress, formatXP, xpForNextLevel } from '../lib/levels'
 
 export default function Profile({ user, setUser }: { user: any; setUser: (u: any) => void }) {
   const navigate = useNavigate()
@@ -46,9 +46,10 @@ export default function Profile({ user, setUser }: { user: any; setUser: (u: any
     )
   }
 
-  const levelTitle = getLevelTitle(user.level || 1)
-  getLevelColor(user.level || 1) // keep import used
-  const levelProgress = getLevelProgress(user.points || 0, user.level || 1)
+  const lvl = user.level || 1
+  const levelTitleText = levelTitle(lvl)
+  const progress = calcLevelProgress(user.experience || 0, lvl)
+  const nextXP = xpForNextLevel(lvl)
 
   return (
     <div className="bg-gray-50 min-h-screen pb-20">
@@ -60,8 +61,8 @@ export default function Profile({ user, setUser }: { user: any; setUser: (u: any
             <div>
               <h1 className="text-xl font-bold">{user.name}</h1>
               <div className="flex items-center gap-1">
-                <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">Lv.{user.level || 1}</span>
-                <span className="text-xs text-white/60">{levelTitle}</span>
+                <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">Lv.{lvl}</span>
+                <span className="text-xs text-white/60">{levelTitleText}</span>
               </div>
             </div>
           </div>
@@ -69,10 +70,14 @@ export default function Profile({ user, setUser }: { user: any; setUser: (u: any
         </div>
         <div className="bg-white/10 rounded-xl p-3 mb-4">
           <div className="flex justify-between text-xs mb-1">
-            <span>{levelTitle}</span>
-            <span>{levelProgress.progress}%</span>
+            <span>{levelTitleText}</span>
+            <span>Lv.{lvl} → Lv.{Math.min(lvl + 1, 100)}</span>
           </div>
-          <div className="w-full bg-white/20 rounded-full h-2"><div className="bg-white rounded-full h-2 transition-all" style={{ width: `${Math.min(levelProgress.progress, 100)}%` }}></div></div>
+          <div className="w-full bg-white/20 rounded-full h-2"><div className="bg-white rounded-full h-2 transition-all" style={{ width: `${Math.min(progress * 100, 100)}%` }}></div></div>
+          <div className="flex justify-between text-[10px] text-white/50 mt-1">
+            <span>{formatXP(user.experience || 0)} XP</span>
+            <span>下级需要 {formatXP(nextXP)} XP</span>
+          </div>
         </div>
         <div className="grid grid-cols-4 gap-3">
           <div className="text-center"><div className="text-lg font-bold">{memes.length}</div><div className="text-[10px] text-white/60">梗</div></div>

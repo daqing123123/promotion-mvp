@@ -5,13 +5,14 @@
 CREATE TABLE IF NOT EXISTS sign_ins (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  sign_date DATE NOT NULL DEFAULT CURRENT_DATE,
   consecutive_days INT DEFAULT 1,
   points_earned INT DEFAULT 10,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(user_id, created_at::date)
+  UNIQUE(user_id, sign_date)
 );
 CREATE INDEX IF NOT EXISTS idx_sign_ins_user ON sign_ins(user_id);
-CREATE INDEX IF NOT EXISTS idx_sign_ins_date ON sign_ins(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sign_ins_date ON sign_ins(sign_date DESC);
 
 -- ===== 任务表 =====
 CREATE TABLE IF NOT EXISTS tasks (
