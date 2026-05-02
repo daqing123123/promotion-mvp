@@ -1,12 +1,14 @@
 // ===== Feed 右侧按钮 =====
 
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { type Content } from '../lib/contentData'
 import { formatStat } from '../lib/memeSystem'
 
 export default function FeedControls({ content, user: _user, onMeme }: { content: Content; user: any; onMeme?: () => void }) {
   const [liked, setLiked] = useState(false)
   const [favorited, setFavorited] = useState(false)
+  const navigate = useNavigate()
 
   return (
     <div className="absolute right-3 bottom-36 z-20 flex flex-col items-center gap-4">
@@ -22,7 +24,7 @@ export default function FeedControls({ content, user: _user, onMeme }: { content
         <span className="text-2xl">💡</span>
         <span className="text-white text-[11px]">造梗</span>
       </button>
-      <button className="flex flex-col items-center gap-0.5">
+      <button onClick={() => navigate(`/content/${content.id}`)} className="flex flex-col items-center gap-0.5">
         <span className="text-2xl">💬</span>
         <span className="text-white text-[11px]">{formatStat(content.stats.comments)}</span>
       </button>

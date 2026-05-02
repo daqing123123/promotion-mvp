@@ -1,79 +1,164 @@
-// ===== 内容详情页 =====
+// ===== 内容详情页 — 真实数据版 =====
 
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { type Content as _Content } from '../lib/contentData'
-import { makeContentFeedBatch } from '../lib/mockDataV2'
-import { MOCK_MEMES, formatStat, getStatusColor, getStatusLabel, type Meme } from '../lib/memeSystem'
-import { MOCK_TOPICS, type Topic as _Topic, getStatusConfig, getTopicTypeConfig, formatTopicStats } from '../lib/topicSystem'
-import _ContentRenderer from '../components/ContentRenderer'
+import { useState, useEffect } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { supabase } from '../lib/supabase/client'
 
 export default function ContentDetail() {
   const navigate = useNavigate()
-  const [showMemeCreate, setShowMemeCreate] = useState(false)
-  const [memeType, setMemeType] = useState<'text' | 'image' | 'hashtag'>('text')
-  const [memeTitle, setMemeTitle] = useState('')
-  const [memeContent, setMemeContent] = useState('')
-  const [memeHashtags, setMemeHashtags] = useState('')
+  const { id } = useParams()
+  const [content, setContent] = useState<any>(null)
+  const [comments, setComments] = useState<any[]>([])
+  const [newComment, setNewComment] = useState('')
   const [liked, setLiked] = useState(false)
   const [favorited, setFavorited] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
 
-  // 使用第一个内容作为示例
-  const content = makeContentFeedBatch(1)[0]
-  const relatedMemes = MOCK_MEMES.slice(0, 3)
-  const relatedTopics = MOCK_TOPICS.slice(0, 2)
+  useEffect(() => {
+    if (id) loadContent(id)
+  }, [id])
 
-  const handleCreateMeme = () => {
-    setShowMemeCreate(false)
-    setMemeTitle('')
-    setMemeContent('')
-    setMemeHashtags('')
+  const loadContent = async (contentId: string) => {
+    setLoading(true)
+
+    // 先查 contents 表
+    let { data } = await supabase.from('contents').select('*').eq('id', contentId).single()
+    let source = 'contents'
+
+    // 没找到就查 memes 表
+    if (!data) {
+      const res = await supabase.from('memes').select('*').eq('id', contentId).single()
+      data = res.data
+      source = 'memes'
+    }
+
+    if (data) {
+      setContent({ ...data, _source: source })
+      // 加载评论（关联用户信息）
+      const { data: cmts } = await supabase
+        .from('comments')
+        .select('*')
+        .eq('target_type', source === 'memes' ? 'meme' : 'content')
+        .eq('target_id', data.id)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      // 获取评论者的用户信息
+      const userIds = [...new Set((cmts || []).map(c => c.user_id).filter(Boolean))]
+      let usersMap: Record<string, any> = {}
+      if (userIds.length > 0) {
+        const { data: usersData } = await supabase.from('users').select('id, name, avatar').in('id', userIds)
+        if (usersData) usersMap = Object.fromEntries(usersData.map(u => [u.id, u]))
+      }
+
+      const commentsWithUser = (cmts || []).map(c => ({
+        ...c,
+        user_name: usersMap[c.user_id]?.name || '匿名用户',
+        user_avatar: usersMap[c.user_id]?.avatar || '👤',
+      }))
+      setComments(commentsWithUser)
+    }
+    setLoading(false)
   }
 
-  return (
-    <div className="bg-gray-50 min-h-screen pb-20">
-      {/* 内容预览 */}
-      <div className="relative h-64 bg-black">
-        <img src={content.cover} alt={content.title} className="w-full h-full object-cover opacity-60" />
-        <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent" />
+  const handleLike = async () => {
+    if (!content) return
+    setLiked(!liked)
+    const table = content._source === 'memes' ? 'memes' : 'contents'
+    const field = content._source === 'memes' ? 'like_count' : 'like_count'
+    await supabase.from(table).update({ [field]: (content.like_count || 0) + (liked ? -1 : 1) }).eq('id', content.id)
+    setContent({ ...content, [field]: (content.like_count || 0) + (liked ? -1 : 1) })
+  }
 
-        {/* 返回 */}
-        <button onClick={() => navigate(-1)} className="absolute top-12 left-4 text-white/80">
-          ← 返回
-        </button>
+  const handleComment = async () => {
+    if (!newComment.trim() || !content) return
+    setSubmitting(true)
 
-        {/* 类型标签 */}
-        <div className="absolute top-12 right-4">
-          <span className="px-2.5 py-1 bg-white/20 text-white text-xs rounded-full">
-            {content.type === 'video' ? '🎬 视频' :
-             content.type === 'product' ? '📦 产品' :
-             content.type === 'software' ? '💻 软件' :
-             content.type === 'skill' ? '🧠 Skill' :
-             content.type}
-          </span>
+    // 获取当前用户（简化：用第一个用户）
+    const { data: users } = await supabase.from('users').select('id, name, avatar').limit(1)
+    const user = users?.[0]
+    if (!user) { setSubmitting(false); return }
+
+    const { data: inserted, error } = await supabase.from('comments').insert({
+      user_id: user.id,
+      target_type: content._source === 'memes' ? 'meme' : 'content',
+      target_id: content.id,
+      content: newComment.trim(),
+    }).select().single()
+
+    if (!error && inserted) {
+      setComments([{ ...inserted, user_name: user.name, user_avatar: user.avatar }, ...comments])
+      setNewComment('')
+    }
+    setSubmitting(false)
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-white">
+        <div className="text-center">
+          <div className="text-4xl mb-3 animate-bounce">🌊</div>
+          <p className="text-gray-400 text-sm">加载中...</p>
         </div>
+      </div>
+    )
+  }
 
-        {/* 底部信息 */}
-        <div className="absolute bottom-4 left-4 right-4">
-          <h1 className="text-white text-xl font-bold mb-1">{content.title}</h1>
-          <p className="text-white/70 text-sm line-clamp-2">{content.description}</p>
+  if (!content) {
+    return (
+      <div className="flex flex-col items-center justify-center h-screen bg-white">
+        <div className="text-4xl mb-3">😢</div>
+        <p className="text-gray-500 mb-4">内容不存在</p>
+        <button onClick={() => navigate(-1)} className="px-6 py-2 bg-black text-white rounded-full text-sm">返回</button>
+      </div>
+    )
+  }
+
+  const isMeme = content._source === 'memes'
+  const title = isMeme ? (content.title || content.content?.substring(0, 30)) : content.title
+  const description = isMeme ? content.content : (content.description || '')
+  const tags = isMeme ? (content.hashtags || []) : (content.tags || [])
+  const creatorName = isMeme ? content.creator_name : content.creator_name
+  const creatorAvatar = isMeme ? content.creator_avatar : content.creator_avatar
+
+  return (
+    <div className="bg-gray-50 min-h-screen pb-24">
+      {/* 顶部封面/标题区 */}
+      <div className="relative bg-gradient-to-br from-gray-900 to-gray-700 px-5 pt-14 pb-6">
+        <button onClick={() => navigate(-1)} className="absolute top-12 left-4 text-white/80 text-lg">← 返回</button>
+        <div className="mt-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="px-2.5 py-1 bg-white/20 text-white text-xs rounded-full">
+              {isMeme ? '📝 段子' : `📦 ${content.type}`}
+            </span>
+            {tags.slice(0, 3).map((tag: string) => (
+              <span key={tag} className="px-2 py-0.5 bg-white/10 text-white/70 text-[11px] rounded-full">#{tag}</span>
+            ))}
+          </div>
+          <h1 className="text-white text-xl font-bold mb-2">{title}</h1>
+          {description && <p className="text-white/70 text-sm leading-relaxed">{description}</p>}
         </div>
       </div>
 
       {/* 互动栏 */}
       <div className="bg-white px-5 py-3 flex items-center justify-between border-b border-gray-100">
-        <div className="flex items-center gap-4">
-          <button onClick={() => setLiked(!liked)} className="flex items-center gap-1.5">
+        <div className="flex items-center gap-5">
+          <button onClick={handleLike} className="flex items-center gap-1.5">
             <span className="text-xl">{liked ? '❤️' : '🤍'}</span>
-            <span className="text-sm text-gray-600">{formatStat(content.stats.likes + (liked ? 1 : 0))}</span>
+            <span className="text-sm text-gray-600">{content.like_count || 0}</span>
           </button>
           <button className="flex items-center gap-1.5">
             <span className="text-xl">💬</span>
-            <span className="text-sm text-gray-600">{formatStat(content.stats.comments)}</span>
+            <span className="text-sm text-gray-600">{comments.length}</span>
           </button>
           <button className="flex items-center gap-1.5">
             <span className="text-xl">🔄</span>
-            <span className="text-sm text-gray-600">{formatStat(content.stats.shares)}</span>
+            <span className="text-sm text-gray-600">{content.share_count || 0}</span>
+          </button>
+          <button className="flex items-center gap-1.5">
+            <span className="text-xl">🔥</span>
+            <span className="text-sm text-gray-600">{content.view_count || 0} 浏览</span>
           </button>
         </div>
         <button onClick={() => setFavorited(!favorited)} className="text-xl">
@@ -85,200 +170,70 @@ export default function ContentDetail() {
       <div className="bg-white px-5 py-4 border-b border-gray-100">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-lg">
-            {content.creator.avatar}
+            {creatorAvatar || '👤'}
           </div>
           <div className="flex-1">
-            <div className="text-sm font-bold text-gray-900">@{content.creator.name}</div>
-            <div className="text-xs text-gray-400">Lv.{content.creator.level}</div>
+            <div className="text-sm font-bold text-gray-900">{creatorName || '匿名用户'}</div>
+            <div className="text-xs text-gray-400">
+              {isMeme ? `${content.view_count || 0} 浏览` : `${content.type} · ${content.view_count || 0} 浏览`}
+            </div>
           </div>
-          <button className="px-4 py-1.5 bg-black text-white text-xs rounded-full">
-            关注
-          </button>
+          <button className="px-4 py-1.5 bg-black text-white text-xs rounded-full">关注</button>
         </div>
       </div>
 
-      {/* 造梗入口 */}
+      {/* 帮推按钮 */}
       <div className="px-5 py-4">
-        <button
-          onClick={() => setShowMemeCreate(true)}
-          className="w-full py-3.5 bg-black text-white rounded-2xl font-bold text-base active:scale-[0.98] transition-transform"
-        >
-          🔥 为这个内容造梗
+        <button className="w-full py-3.5 bg-black text-white rounded-2xl font-bold text-base active:scale-[0.98] transition-transform">
+          🔥 帮推这条内容 (+20积分)
         </button>
       </div>
 
-      {/* 相关话题 */}
-      {relatedTopics.length > 0 && (
-        <div className="px-5 pb-4">
-          <h2 className="text-sm font-bold text-gray-900 mb-3">📢 相关话题</h2>
-          <div className="space-y-2">
-            {relatedTopics.map(topic => {
-              const statusConfig = getStatusConfig(topic.status)
-              const typeConfig = getTopicTypeConfig(topic.type)
-              return (
-                <div
-                  key={topic.id}
-                  onClick={() => navigate(`/topic/${topic.id}`)}
-                  className="bg-white rounded-xl p-3 border border-gray-100 active:bg-gray-50"
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={`px-2 py-0.5 text-[10px] rounded-full ${typeConfig.color}`}>
-                      {typeConfig.icon} {typeConfig.label}
-                    </span>
-                    <span className={`px-2 py-0.5 text-[10px] rounded-full ${statusConfig.color}`}>
-                      {statusConfig.label}
-                    </span>
-                  </div>
-                  <h3 className="text-sm font-bold text-gray-900 mb-1">{topic.title}</h3>
-                  <div className="flex items-center gap-3 text-[11px] text-gray-400">
-                    <span>💡 {topic.stats.memeCount} 梗</span>
-                    <span>👁 {formatTopicStats(topic.stats.totalViews)} 曝光</span>
-                    <span>💰 {topic.rewardPool} 积分</span>
-                  </div>
-                </div>
-              )
-            })}
+      {/* 评论区 */}
+      <div className="px-5">
+        <h2 className="text-sm font-bold text-gray-900 mb-3">💬 评论 ({comments.length})</h2>
+
+        {/* 发表评论 */}
+        <div className="bg-white rounded-2xl p-4 mb-4 border border-gray-100">
+          <textarea
+            value={newComment}
+            onChange={e => setNewComment(e.target.value)}
+            placeholder="说说你的看法..."
+            rows={3}
+            className="w-full text-sm resize-none focus:outline-none"
+          />
+          <div className="flex justify-end mt-2">
+            <button
+              onClick={handleComment}
+              disabled={!newComment.trim() || submitting}
+              className={`px-5 py-2 rounded-full text-sm font-medium transition-all ${
+                newComment.trim() ? 'bg-black text-white' : 'bg-gray-200 text-gray-400'
+              }`}
+            >
+              {submitting ? '发送中...' : '发表'}
+            </button>
           </div>
         </div>
-      )}
 
-      {/* 相关梗 */}
-      <div className="px-5 pb-5">
-        <h2 className="text-sm font-bold text-gray-900 mb-3">🔥 相关梗</h2>
+        {/* 评论列表 */}
         <div className="space-y-3">
-          {relatedMemes.map(meme => (
-            <MemeCard key={meme.id} meme={meme} />
-          ))}
-        </div>
-      </div>
-
-      {/* 造梗弹窗 */}
-      {showMemeCreate && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={() => setShowMemeCreate(false)}>
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-          <div
-            className="relative bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-lg max-h-[85vh] overflow-hidden"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="sticky top-0 bg-white px-5 pt-5 pb-3 border-b border-gray-100">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-gray-900">💡 造梗</h2>
-                <button onClick={() => setShowMemeCreate(false)} className="text-gray-400 text-xl">✕</button>
-              </div>
-              <p className="text-xs text-gray-400 mt-1">为「{content.title}」造一个梗</p>
-            </div>
-
-            <div className="p-5 overflow-y-auto max-h-[60vh] space-y-4">
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-2 block">梗类型</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { type: 'text' as const, icon: '📝', label: '文案梗' },
-                    { type: 'image' as const, icon: '🖼️', label: '图片梗' },
-                    { type: 'hashtag' as const, icon: '🏷️', label: '话题梗' },
-                  ].map(t => (
-                    <button
-                      key={t.type}
-                      onClick={() => setMemeType(t.type)}
-                      className={`p-3 rounded-xl text-center transition-all ${
-                        memeType === t.type ? 'bg-black text-white' : 'bg-gray-50 text-gray-600'
-                      }`}
-                    >
-                      <div className="text-xl mb-1">{t.icon}</div>
-                      <div className="text-xs">{t.label}</div>
-                    </button>
-                  ))}
+          {comments.length === 0 ? (
+            <div className="text-center py-8 text-gray-400 text-sm">还没有评论，来说两句吧 💬</div>
+          ) : (
+            comments.map(c => (
+              <div key={c.id} className="bg-white rounded-xl p-4 border border-gray-100">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-sm">
+                    {c.user_avatar || '👤'}
+                  </div>
+                  <span className="text-sm font-medium text-gray-900">{c.user_name || '匿名用户'}</span>
+                  <span className="text-[11px] text-gray-400">{new Date(c.created_at).toLocaleDateString('zh-CN')}</span>
                 </div>
+                <p className="text-sm text-gray-700 leading-relaxed">{c.content}</p>
               </div>
-
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-1 block">梗标题</label>
-                <input
-                  type="text"
-                  value={memeTitle}
-                  onChange={e => setMemeTitle(e.target.value)}
-                  placeholder="给你的梗起个标题"
-                  className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-200"
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-1 block">
-                  {memeType === 'text' ? '文案内容' : memeType === 'image' ? '图片链接' : '话题标签'}
-                </label>
-                <textarea
-                  value={memeContent}
-                  onChange={e => setMemeContent(e.target.value)}
-                  placeholder={
-                    memeType === 'text' ? '写下你的梗...' :
-                    memeType === 'image' ? '输入图片URL...' :
-                    '输入话题标签，如 #国产片之光'
-                  }
-                  rows={4}
-                  className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-gray-200"
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-gray-700 mb-1 block">话题标签</label>
-                <input
-                  type="text"
-                  value={memeHashtags}
-                  onChange={e => setMemeHashtags(e.target.value)}
-                  placeholder="用逗号分隔，如：国产片之光,年度最佳"
-                  className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-200"
-                />
-              </div>
-
-              <div className="bg-gray-50 rounded-xl p-4">
-                <h3 className="text-xs font-bold text-gray-500 mb-2">💡 参考梗</h3>
-                <div className="space-y-2">
-                  {relatedMemes.slice(0, 2).map(m => (
-                    <div key={m.id} className="text-sm text-gray-600">"{m.title}" - {formatStat(m.stats.views)}曝光</div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="sticky bottom-0 bg-white px-5 py-4 border-t border-gray-100">
-              <button
-                onClick={handleCreateMeme}
-                disabled={!memeTitle.trim() || !memeContent.trim()}
-                className={`w-full py-3 rounded-2xl font-bold text-base transition-all ${
-                  memeTitle.trim() && memeContent.trim()
-                    ? 'bg-black text-white active:scale-[0.98]'
-                    : 'bg-gray-200 text-gray-400'
-                }`}
-              >
-                发布梗
-              </button>
-            </div>
-          </div>
+            ))
+          )}
         </div>
-      )}
-    </div>
-  )
-}
-
-function MemeCard({ meme }: { meme: Meme }) {
-  return (
-    <div className="bg-white rounded-2xl p-4 border border-gray-100">
-      <div className="flex items-center gap-2 mb-2">
-        <span className={`px-2 py-0.5 text-[10px] font-medium rounded-full ${getStatusColor(meme.status)}`}>
-          {getStatusLabel(meme.status)}
-        </span>
-      </div>
-      <h3 className="text-sm font-bold text-gray-900 mb-1">{meme.title}</h3>
-      <p className="text-xs text-gray-500 line-clamp-2 mb-2">{meme.content}</p>
-      <div className="flex flex-wrap gap-1 mb-2">
-        {meme.hashtags.slice(0, 3).map(tag => (
-          <span key={tag} className="text-[10px] text-blue-500">#{tag}</span>
-        ))}
-      </div>
-      <div className="flex items-center gap-4 text-[11px] text-gray-400">
-        <span>👁 {formatStat(meme.stats.views)}</span>
-        <span>❤️ {formatStat(meme.stats.likes)}</span>
-        <span>🔄 {formatStat(meme.stats.shares)}</span>
       </div>
     </div>
   )
