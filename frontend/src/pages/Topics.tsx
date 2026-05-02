@@ -13,6 +13,24 @@ const TOPIC_TYPES = [
   { key: 'challenge', label: '挑战赛', icon: '🏆' },
 ]
 
+const TOPICS_CACHE_KEY = 'julang_topics_cache'
+
+function getCachedTopics(filter: string): any[] | null {
+  try {
+    const cached = localStorage.getItem(`${TOPICS_CACHE_KEY}_${filter}`)
+    if (!cached) return null
+    const { data, time } = JSON.parse(cached)
+    if (Date.now() - time > 10 * 60 * 1000) return null // 10 分钟缓存
+    return data
+  } catch { return null }
+}
+
+function setCachedTopics(filter: string, data: any[]) {
+  try {
+    localStorage.setItem(`${TOPICS_CACHE_KEY}_${filter}`, JSON.stringify({ data, time: Date.now() }))
+  } catch {}
+}
+
 export default function Topics() {
   const navigate = useNavigate()
   const [filter, setFilter] = useState('all')
@@ -20,16 +38,26 @@ export default function Topics() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetchTopics()
+    // 先显示缓存
+    const cached = getCachedTopics(filter)
+    if (cached) {
+      setTopics(cached)
+      setLoading(false)
+      // 后台刷新
+      fetchTopics(true)
+    } else {
+      fetchTopics()
+    }
   }, [filter])
 
-  const fetchTopics = async () => {
-    setLoading(true)
+  const fetchTopics = async (silent = false) => {
+    if (!silent) setLoading(true)
     let query = supabase.from('topics').select('*').eq('status', 'active').order('hot_score', { ascending: false })
     if (filter !== 'all') query = query.eq('type', filter)
     const { data } = await query
     setTopics(data || [])
-    setLoading(false)
+    setCachedTopics(filter, data || [])
+    if (!silent) setLoading(false)
   }
 
   const formatNum = (n: number) => n >= 10000 ? (n / 10000).toFixed(1) + '万' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n)
@@ -72,7 +100,7 @@ export default function Topics() {
       </div>
 
       <div className="px-5 space-y-4">
-        {loading ? (
+        {loading && topics.length === 0 ? (
           <div className="text-center py-10 text-gray-400">加载中...</div>
         ) : topics.length === 0 ? (
           <div className="text-center py-10 text-gray-400">暂无话题</div>
