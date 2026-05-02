@@ -1,6 +1,6 @@
 // ===== 首页 - 全屏内容 Feed =====
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import FeedContainer from '../components/FeedContainer'
 import MemeModal from '../components/MemeModal'
 import { supabase } from '../lib/supabase/client'
@@ -15,23 +15,42 @@ interface HomeV2Props {
 export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }: HomeV2Props) {
   const [contents, setContents] = useState<Content[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [memeTarget, setMemeTarget] = useState<Content | null>(null)
+  const [memeOffset, setMemeOffset] = useState(0)
+  const [contentOffset, setContentOffset] = useState(0)
+  const [hasMore, setHasMore] = useState(true)
 
   useEffect(() => {
     fetchContents()
   }, [])
 
-  const fetchContents = async () => {
-    setLoading(true)
+  const fetchContents = async (isLoadMore = false) => {
+    if (isLoadMore) setLoadingMore(true)
+    else setLoading(true)
 
-    // 并行加载 memes（自带 creator_name）和 contents
+    const currentMemeOffset = isLoadMore ? memeOffset : 0
+    const currentContentOffset = isLoadMore ? contentOffset : 0
+
+    // 并行加载 memes 和 contents
     const [contentsRes, memesRes] = await Promise.all([
-      supabase.from('contents').select('id, type, title, description, cover_url, tags, creator_id, render_mode, render_src, render_config, view_count, like_count, promote_count, share_count, comment_count, favorite_count, created_at').eq('status', 'published').order('created_at', { ascending: false }).limit(20),
-      supabase.from('memes').select('id, title, content, image_url, hashtags, creator_id, creator_name, creator_avatar, like_count, view_count, share_count, created_at').eq('status', 'published').order('hot_score', { ascending: false }).limit(30),
+      supabase.from('contents').select('id, type, title, description, cover_url, tags, creator_id, render_mode, render_src, render_config, view_count, like_count, promote_count, share_count, comment_count, favorite_count, created_at').eq('status', 'published').order('created_at', { ascending: false }).range(currentContentOffset, currentContentOffset + 14),
+      supabase.from('memes').select('id, title, content, image_url, hashtags, creator_id, creator_name, creator_avatar, like_count, view_count, share_count, created_at').eq('status', 'published').order('hot_score', { ascending: false }).range(currentMemeOffset, currentMemeOffset + 19),
     ])
 
-    // 只为 contents 查用户（memes 自带 creator_name）
-    const contentCreatorIds = [...new Set((contentsRes.data || []).map(c => c.creator_id).filter(Boolean))]
+    const newContents = contentsRes.data || []
+    const newMemes = memesRes.data || []
+
+    // 如果两个都没数据，说明到底了
+    if (newContents.length === 0 && newMemes.length === 0) {
+      setHasMore(false)
+      setLoading(false)
+      setLoadingMore(false)
+      return
+    }
+
+    // 查用户信息
+    const contentCreatorIds = [...new Set(newContents.map(c => c.creator_id).filter(Boolean))]
     let usersMap: Record<string, any> = {}
     if (contentCreatorIds.length > 0) {
       const { data: usersData } = await supabase.from('users').select('id, name, avatar, level').in('id', contentCreatorIds)
@@ -39,7 +58,7 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
     }
 
     // 转换 contents
-    const contentItems: Content[] = (contentsRes.data || []).map(item => {
+    const contentItems: Content[] = newContents.map(item => {
       const u = usersMap[item.creator_id] || {}
       return {
         id: item.id,
@@ -79,8 +98,8 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
       }
     })
 
-    // 转换 memes 为 Content 格式
-    const memeItems: Content[] = (memesRes.data || []).map(item => {
+    // 转换 memes
+    const memeItems: Content[] = newMemes.map(item => {
       const u = usersMap[item.creator_id] || {}
       return {
         id: item.id,
@@ -116,16 +135,36 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
       }
     })
 
-    // 合并并随机打散（contents 前置但穿插 memes）
-    const all = [...contentItems, ...memeItems].sort(() => Math.random() - 0.5)
-    setContents(all)
+    // 合并并随机打散
+    const newItems = [...contentItems, ...memeItems].sort(() => Math.random() - 0.5)
+
+    if (isLoadMore) {
+      setContents(prev => [...prev, ...newItems])
+      setMemeOffset(currentMemeOffset + newMemes.length)
+      setContentOffset(currentContentOffset + newContents.length)
+    } else {
+      setContents(newItems)
+      setMemeOffset(newMemes.length)
+      setContentOffset(newContents.length)
+    }
+
+    // 如果本次加载不足，说明快到底了
+    if (newItems.length < 10) setHasMore(false)
+
     setLoading(false)
+    setLoadingMore(false)
   }
+
+  // 加载更多回调（传给 FeedContainer）
+  const handleLoadMore = useCallback(() => {
+    if (!loadingMore && hasMore) {
+      fetchContents(true)
+    }
+  }, [loadingMore, hasMore, memeOffset, contentOffset])
 
   if (loading) {
     return (
       <div className="w-full h-screen bg-black">
-        {/* 顶部骨架 */}
         <div className="pt-14 px-5 pb-4">
           <div className="h-8 w-32 bg-white/10 rounded mb-4 animate-pulse" />
           <div className="space-y-4">
@@ -167,6 +206,8 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
         contents={contents}
         user={user}
         onMeme={(c) => setMemeTarget(c)}
+        onLoadMore={handleLoadMore}
+        loadingMore={loadingMore}
       />
 
       {/* 造梗弹窗 */}

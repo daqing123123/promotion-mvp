@@ -1,0 +1,175 @@
+// ===== 评论底部弹窗 =====
+
+import { useState, useEffect, useRef } from 'react'
+import { supabase } from '../lib/supabase/client'
+
+interface CommentSheetProps {
+  contentId: string
+  source: 'memes' | 'contents'
+  userId?: string
+  onClose: () => void
+}
+
+export default function CommentSheet({ contentId, source, userId, onClose }: CommentSheetProps) {
+  const [comments, setComments] = useState<any[]>([])
+  const [newComment, setNewComment] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const sheetRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    loadComments()
+    // 自动聚焦输入框
+    setTimeout(() => inputRef.current?.focus(), 300)
+  }, [])
+
+  // 点击遮罩关闭
+  const handleBackdropClick = (e: React.MouseEvent) => {
+    if (e.target === sheetRef.current) onClose()
+  }
+
+  const loadComments = async () => {
+    setLoading(true)
+    const targetType = source === 'memes' ? 'meme' : 'content'
+    const { data: cmts } = await supabase
+      .from('comments')
+      .select('*')
+      .eq('target_type', targetType)
+      .eq('target_id', contentId)
+      .order('created_at', { ascending: false })
+      .limit(50)
+
+    // 获取评论者信息
+    const userIds = [...new Set((cmts || []).map(c => c.user_id).filter(Boolean))]
+    let usersMap: Record<string, any> = {}
+    if (userIds.length > 0) {
+      const { data: usersData } = await supabase.from('users').select('id, name, avatar').in('id', userIds)
+      if (usersData) usersMap = Object.fromEntries(usersData.map(u => [u.id, u]))
+    }
+
+    const commentsWithUser = (cmts || []).map(c => ({
+      ...c,
+      user_name: usersMap[c.user_id]?.name || '匿名用户',
+      user_avatar: usersMap[c.user_id]?.avatar || '👤',
+    }))
+    setComments(commentsWithUser)
+    setLoading(false)
+  }
+
+  const handleSubmit = async () => {
+    if (!newComment.trim() || submitting) return
+    setSubmitting(true)
+
+    // 获取当前用户
+    let uid = userId
+    if (!uid) {
+      const { data: users } = await supabase.from('users').select('id, name, avatar').limit(1)
+      uid = users?.[0]?.id
+    }
+    if (!uid) { setSubmitting(false); return }
+
+    const { data: userInfo } = await supabase.from('users').select('name, avatar').eq('id', uid).single()
+
+    const { data: inserted, error } = await supabase.from('comments').insert({
+      user_id: uid,
+      target_type: source === 'memes' ? 'meme' : 'content',
+      target_id: contentId,
+      content: newComment.trim(),
+    }).select().single()
+
+    if (!error && inserted) {
+      // 立即显示新评论（不用重新加载）
+      setComments([{
+        ...inserted,
+        user_name: userInfo?.name || '匿名用户',
+        user_avatar: userInfo?.avatar || '👤',
+      }, ...comments])
+      setNewComment('')
+    }
+    setSubmitting(false)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSubmit()
+    }
+  }
+
+  return (
+    <div
+      ref={sheetRef}
+      className="fixed inset-0 z-[100] flex items-end"
+      onClick={handleBackdropClick}
+    >
+      {/* 遮罩 */}
+      <div className="absolute inset-0 bg-black/50" />
+
+      {/* 弹窗主体 */}
+      <div className="relative w-full bg-white rounded-t-3xl max-h-[70vh] flex flex-col animate-slide-up">
+        {/* 拖拽条 */}
+        <div className="flex justify-center py-3">
+          <div className="w-10 h-1 bg-gray-300 rounded-full" />
+        </div>
+
+        {/* 标题 */}
+        <div className="px-5 pb-3 border-b border-gray-100">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-bold">💬 评论 ({comments.length})</h3>
+            <button onClick={onClose} className="text-gray-400 text-xl">✕</button>
+          </div>
+        </div>
+
+        {/* 评论列表 */}
+        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3" style={{ maxHeight: 'calc(70vh - 160px)' }}>
+          {loading ? (
+            <div className="text-center py-8 text-gray-400 text-sm">加载中...</div>
+          ) : comments.length === 0 ? (
+            <div className="text-center py-8 text-gray-400 text-sm">还没有评论，来说两句吧 💬</div>
+          ) : (
+            comments.map(c => (
+              <div key={c.id} className="flex gap-3">
+                <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-sm shrink-0">
+                  {c.user_avatar || '👤'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-sm font-medium text-gray-900">{c.user_name || '匿名用户'}</span>
+                    <span className="text-[10px] text-gray-400">{new Date(c.created_at).toLocaleDateString('zh-CN')}</span>
+                  </div>
+                  <p className="text-sm text-gray-700 leading-relaxed">{c.content}</p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* 输入框 */}
+        <div className="border-t border-gray-100 px-5 py-3 bg-white">
+          <div className="flex items-end gap-2">
+            <textarea
+              ref={inputRef}
+              value={newComment}
+              onChange={e => setNewComment(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="说说你的看法..."
+              rows={1}
+              className="flex-1 text-sm resize-none focus:outline-none bg-gray-100 rounded-2xl px-4 py-2.5 max-h-20"
+              style={{ minHeight: '40px' }}
+            />
+            <button
+              onClick={handleSubmit}
+              disabled={!newComment.trim() || submitting}
+              className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                newComment.trim() ? 'bg-black text-white' : 'bg-gray-200 text-gray-400'
+              }`}
+            >
+              {submitting ? '...' : '↑'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

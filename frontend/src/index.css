@@ -80,3 +80,12 @@ body {
 input:-webkit-autofill {
   -webkit-box-shadow: 0 0 0 30px #f9fafb inset !important;
 }
+
+/* 评论弹窗滑入动画 */
+@keyframes slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out;
+}
