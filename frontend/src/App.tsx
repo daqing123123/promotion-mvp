@@ -1,18 +1,20 @@
 import { BrowserRouter as Router, Routes, Route, useLocation, Link, useNavigate } from 'react-router-dom'
 import { useState, useEffect, lazy, Suspense } from 'react'
 
-// 懒加载页面 — 首屏只加载 HomeV2
-const HomeV2 = lazy(() => import('./pages/HomeV2'))
+// 常用页面直接导入（不懒加载）— 切换秒开
+import HomeV2 from './pages/HomeV2'
+import Topics from './pages/Topics'
+import ChatPage from './pages/ChatPage'
+import Profile from './pages/Profile'
+import Search from './pages/Search'
+
+// 低频页面懒加载
 const Promote = lazy(() => import('./pages/Promote'))
 const PublishV2 = lazy(() => import('./pages/PublishV2'))
-const Profile = lazy(() => import('./pages/Profile'))
 const Login = lazy(() => import('./pages/Login'))
 const Register = lazy(() => import('./pages/Register'))
-const Topics = lazy(() => import('./pages/Topics'))
 const TopicDetail = lazy(() => import('./pages/TopicDetail'))
 const ContentDetail = lazy(() => import('./pages/ContentDetail'))
-const Search = lazy(() => import('./pages/Search'))
-const ChatPage = lazy(() => import('./pages/ChatPage'))
 const CheckIn = lazy(() => import('./pages/CheckIn'))
 const Tasks = lazy(() => import('./pages/Tasks'))
 const Activities = lazy(() => import('./pages/Activities'))

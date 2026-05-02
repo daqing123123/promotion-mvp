@@ -9,6 +9,7 @@ export default function ChatPage({ user }: { user: any }) {
   const [tab, setTab] = useState<'notifications' | 'chats'>('notifications')
   const [notifications, setNotifications] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [chatUnread, setChatUnread] = useState(2) // 模拟未读
 
   useEffect(() => {
     if (user) fetchNotifications()
@@ -34,6 +35,12 @@ export default function ChatPage({ user }: { user: any }) {
     fetchNotifications()
   }
 
+  // 切换到聊天 tab 时清除红点
+  const handleTabChange = (t: 'notifications' | 'chats') => {
+    setTab(t)
+    if (t === 'chats') setChatUnread(0)
+  }
+
   const unreadCount = notifications.filter(n => !n.is_read).length
 
   const getTimeAgo = (date: string) => {
@@ -54,7 +61,7 @@ export default function ChatPage({ user }: { user: any }) {
 
   const chats = [
     { id: '1', name: '系统通知', lastMsg: '欢迎加入巨浪！', time: '刚刚', avatar: '📢', unread: 0 },
-    { id: '2', name: '陈小雨', lastMsg: '你的梗太有意思了', time: '1小时前', avatar: '🌊', unread: 2 },
+    { id: '2', name: '陈小雨', lastMsg: '你的梗太有意思了', time: '1小时前', avatar: '🌊', unread: 0 },
     { id: '3', name: '造梗交流群', lastMsg: '有人看了新话题吗', time: '3小时前', avatar: '💡', unread: 0 },
   ]
 
@@ -73,16 +80,18 @@ export default function ChatPage({ user }: { user: any }) {
       <div className="px-5 pt-12 pb-4">
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-2xl font-bold text-gray-900">消息</h1>
-          {unreadCount > 0 && (
-            <button onClick={markAllRead} className="text-sm text-blue-500">全部已读</button>
-          )}
+          <div className="flex gap-2">
+            {unreadCount > 0 && (
+              <button onClick={markAllRead} className="text-sm text-blue-500">全部已读</button>
+            )}
+          </div>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setTab('notifications')} className={`px-5 py-2 rounded-full text-sm font-medium transition-all ${tab === 'notifications' ? 'bg-black text-white' : 'bg-gray-100 text-gray-600'}`}>
+          <button onClick={() => handleTabChange('notifications')} className={`px-5 py-2 rounded-full text-sm font-medium transition-all ${tab === 'notifications' ? 'bg-black text-white' : 'bg-gray-100 text-gray-600'}`}>
             通知 {unreadCount > 0 && <span className="ml-1 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{unreadCount}</span>}
           </button>
-          <button onClick={() => setTab('chats')} className={`px-5 py-2 rounded-full text-sm font-medium transition-all ${tab === 'chats' ? 'bg-black text-white' : 'bg-gray-100 text-gray-600'}`}>
-            聊天 <span className="ml-1 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">2</span>
+          <button onClick={() => handleTabChange('chats')} className={`px-5 py-2 rounded-full text-sm font-medium transition-all ${tab === 'chats' ? 'bg-black text-white' : 'bg-gray-100 text-gray-600'}`}>
+            聊天 {chatUnread > 0 && <span className="ml-1 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{chatUnread}</span>}
           </button>
         </div>
       </div>
