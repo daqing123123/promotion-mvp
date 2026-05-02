@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { makeContentFeedBatch } from '../lib/mockDataV2'
-import { MOCK_TOPICS, getTopicTypeConfig, getStatusConfig, formatTopicStats } from '../lib/topicSystem'
+import { MOCK_TOPICS, getTopicTypeConfig, getStatusConfig as _getStatusConfig, formatTopicStats } from '../lib/topicSystem'
 import { MOCK_MEMES, formatStat, getStatusColor, getStatusLabel } from '../lib/memeSystem'
 
 type SearchTab = 'all' | 'content' | 'topic' | 'meme'

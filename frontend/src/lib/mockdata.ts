@@ -149,7 +149,6 @@ export function makePromoItem(): RecommendableItem {
 export function makeFeedBatch(count: number): RecommendableItem[] {
   const items: RecommendableItem[] = []
   for (let i = 0; i < count; i++) {
-    const rand = Math.random()
     if (i % 10 === 5) {
       // 每10个里1个盲盒
       items.push(makeBlindBox())

@@ -2,11 +2,11 @@
 
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { type Content } from '../lib/contentData'
+import { type Content as _Content } from '../lib/contentData'
 import { makeContentFeedBatch } from '../lib/mockDataV2'
 import { MOCK_MEMES, formatStat, getStatusColor, getStatusLabel, type Meme } from '../lib/memeSystem'
-import { MOCK_TOPICS, type Topic, getStatusConfig, getTopicTypeConfig, formatTopicStats } from '../lib/topicSystem'
-import ContentRenderer from '../components/ContentRenderer'
+import { MOCK_TOPICS, type Topic as _Topic, getStatusConfig, getTopicTypeConfig, formatTopicStats } from '../lib/topicSystem'
+import _ContentRenderer from '../components/ContentRenderer'
 
 export default function ContentDetail() {
   const navigate = useNavigate()

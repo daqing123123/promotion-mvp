@@ -11,8 +11,8 @@ interface PromoteProps {
   isMobile: boolean
 }
 
-export default function Promote({ user, setUser, isMobile }: PromoteProps) {
-  const navigate = useNavigate()
+export default function Promote({ user, setUser: _setUser, isMobile: _isMobile }: PromoteProps) {
+  useNavigate() // keep hook used
   const [showPoints, setShowPoints] = useState(false)
   const [filter, setFilter] = useState<'all' | 'hot' | 'new' | 'ending'>('all')
 

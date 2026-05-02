@@ -1,16 +1,34 @@
 import { BrowserRouter as Router, Routes, Route, useLocation, Link, useNavigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
-import HomeV2 from './pages/HomeV2'
-import Promote from './pages/Promote'
-import PublishV2 from './pages/PublishV2'
-import Profile from './pages/Profile'
-import Login from './pages/Login'
-import Register from './pages/Register'
-import Topics from './pages/Topics'
-import TopicDetail from './pages/TopicDetail'
-import ContentDetail from './pages/ContentDetail'
-import Search from './pages/Search'
-import ChatPage from './pages/ChatPage'
+import { useState, useEffect, lazy, Suspense } from 'react'
+
+// 懒加载页面 — 首屏只加载 HomeV2
+const HomeV2 = lazy(() => import('./pages/HomeV2'))
+const Promote = lazy(() => import('./pages/Promote'))
+const PublishV2 = lazy(() => import('./pages/PublishV2'))
+const Profile = lazy(() => import('./pages/Profile'))
+const Login = lazy(() => import('./pages/Login'))
+const Register = lazy(() => import('./pages/Register'))
+const Topics = lazy(() => import('./pages/Topics'))
+const TopicDetail = lazy(() => import('./pages/TopicDetail'))
+const ContentDetail = lazy(() => import('./pages/ContentDetail'))
+const Search = lazy(() => import('./pages/Search'))
+const ChatPage = lazy(() => import('./pages/ChatPage'))
+const CheckIn = lazy(() => import('./pages/CheckIn'))
+const Tasks = lazy(() => import('./pages/Tasks'))
+const Activities = lazy(() => import('./pages/Activities'))
+const Points = lazy(() => import('./pages/Points'))
+const Achievements = lazy(() => import('./pages/Achievements'))
+
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center h-screen bg-white">
+      <div className="text-center">
+        <div className="text-4xl mb-3 animate-bounce">🌊</div>
+        <p className="text-gray-400 text-sm">加载中...</p>
+      </div>
+    </div>
+  )
+}
 
 function useIsMobile() {
   const [mobile, setMobile] = useState(window.innerWidth < 768)
@@ -67,20 +85,27 @@ function AppLayout() {
       )}
 
       <div className={!isAuth && !noTopBar ? 'pt-12' : ''}>
-        <Routes>
-          <Route path="/" element={<HomeV2 user={user} setUser={setUser} isMobile={isMobile} />} />
-          <Route path="/promote" element={<Promote user={user} setUser={setUser} isMobile={isMobile} />} />
-          <Route path="/topics" element={<Topics />} />
-          <Route path="/topic/:id" element={<TopicDetail />} />
-          <Route path="/content/:id" element={<ContentDetail />} />
-          <Route path="/search" element={<Search />} />
-          <Route path="/chat" element={user ? <ChatPage user={user} /> : <Login setUser={setUser} />} />
-          <Route path="/login" element={<Login setUser={setUser} />} />
-          <Route path="/register" element={<Register setUser={setUser} />} />
-          <Route path="/publish" element={user ? <PublishV2 user={user} isMobile={isMobile} /> : <Login setUser={setUser} />} />
-          <Route path="/profile" element={user ? <Profile user={user} setUser={setUser} /> : <Login setUser={setUser} />} />
-          <Route path="/profile/:id" element={user ? <Profile user={user} setUser={setUser} /> : <Login setUser={setUser} />} />
-        </Routes>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/" element={<HomeV2 user={user} setUser={setUser} isMobile={isMobile} />} />
+            <Route path="/promote" element={<Promote user={user} setUser={setUser} isMobile={isMobile} />} />
+            <Route path="/topics" element={<Topics />} />
+            <Route path="/topic/:id" element={<TopicDetail />} />
+            <Route path="/content/:id" element={<ContentDetail />} />
+            <Route path="/search" element={<Search />} />
+            <Route path="/chat" element={user ? <ChatPage user={user} /> : <Login setUser={setUser} />} />
+            <Route path="/login" element={<Login setUser={setUser} />} />
+            <Route path="/register" element={<Register setUser={setUser} />} />
+            <Route path="/publish" element={user ? <PublishV2 user={user} isMobile={isMobile} /> : <Login setUser={setUser} />} />
+            <Route path="/profile" element={user ? <Profile user={user} setUser={setUser} /> : <Login setUser={setUser} />} />
+            <Route path="/profile/:id" element={user ? <Profile user={user} setUser={setUser} /> : <Login setUser={setUser} />} />
+            <Route path="/checkin" element={user ? <CheckIn user={user} setUser={setUser} /> : <Login setUser={setUser} />} />
+            <Route path="/tasks" element={user ? <Tasks user={user} setUser={setUser} /> : <Login setUser={setUser} />} />
+            <Route path="/activities" element={user ? <Activities user={user} setUser={setUser} /> : <Login setUser={setUser} />} />
+            <Route path="/points" element={user ? <Points user={user} /> : <Login setUser={setUser} />} />
+            <Route path="/achievements" element={user ? <Achievements user={user} /> : <Login setUser={setUser} />} />
+          </Routes>
+        </Suspense>
       </div>
 
       {!isAuth && (

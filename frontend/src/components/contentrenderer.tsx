@@ -2,7 +2,7 @@
 
 import { type Content } from '../lib/contentData'
 
-export default function ContentRenderer({ content, isActive }: { content: Content; isActive: boolean }) {
+export default function ContentRenderer({ content, isActive: _isActive }: { content: Content; isActive: boolean }) {
   // 文字类内容：直接显示文字
   if (content.type === 'article' || content.type === 'content') {
     return (

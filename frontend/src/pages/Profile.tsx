@@ -47,7 +47,7 @@ export default function Profile({ user, setUser }: { user: any; setUser: (u: any
   }
 
   const levelTitle = getLevelTitle(user.level || 1)
-  const levelColor = getLevelColor(user.level || 1)
+  getLevelColor(user.level || 1) // keep import used
   const levelProgress = getLevelProgress(user.points || 0, user.level || 1)
 
   return (

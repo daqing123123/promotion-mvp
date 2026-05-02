@@ -12,7 +12,7 @@ interface HomeV2Props {
   isMobile: boolean
 }
 
-export default function HomeV2({ user, setUser, isMobile }: HomeV2Props) {
+export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }: HomeV2Props) {
   const [contents, setContents] = useState<Content[]>([])
   const [loading, setLoading] = useState(true)
   const [memeTarget, setMemeTarget] = useState<Content | null>(null)

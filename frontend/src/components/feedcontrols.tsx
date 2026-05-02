@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { type Content } from '../lib/contentData'
 import { formatStat } from '../lib/memeSystem'
 
-export default function FeedControls({ content, user, onMeme }: { content: Content; user: any; onMeme?: () => void }) {
+export default function FeedControls({ content, user: _user, onMeme }: { content: Content; user: any; onMeme?: () => void }) {
   const [liked, setLiked] = useState(false)
   const [favorited, setFavorited] = useState(false)
 

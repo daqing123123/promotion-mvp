@@ -1,103 +1,267 @@
-// ===== 成就系统 =====
+// ===== 成就系统（真实逻辑） =====
 
-export interface Achievement {
+import { supabase, getUserAchievements, unlockAchievement } from './supabase/client'
+
+export interface AchievementDef {
   id: string
   name: string
   icon: string
   desc: string
-  category: 'discover' | 'promote' | 'create' | 'wave' | 'fan' | 'special'
+  category: 'discover' | 'promote' | 'create' | 'social' | 'checkin' | 'special'
   condition: string
+  rewardPoints: number
   check: (stats: UserStats) => boolean
+  getProgress: (stats: UserStats) => { current: number; max: number }
 }
 
 export interface UserStats {
-  totalOpens: number
   totalPromotes: number
-  totalPromoteHits: number
-  promoteHitRate: number
-  rareFinds: number
-  epicFinds: number
-  legendaryFinds: number
   contentPublished: number
-  wavesCreated: { tsunami: number; big: number; medium: number; small: number }
-  wavesParticipated: number
-  totalExposureContributed: number
-  streak: number
-  fanPromotes: number  // 为偶像发起的推广次数
-  fanBoosts: number    // 带动的帮推人数
+  totalLikes: number
+  totalComments: number
+  consecutiveCheckInDays: number
+  totalCheckInDays: number
+  followers: number
+  totalPoints: number
+  tasksCompleted: number
+  votesParticipated: number
 }
 
-export const ACHIEVEMENTS: Achievement[] = [
-  // 发现类
-  { id: 'first_open', name: '初来乍到', icon: '📦', desc: '第一次拆盲盒', category: 'discover', condition: '拆开1个盲盒', check: s => s.totalOpens >= 1 },
-  { id: 'open_10', name: '盲盒爱好者', icon: '🎁', desc: '累计拆开10个盲盒', category: 'discover', condition: '拆开10个盲盒', check: s => s.totalOpens >= 10 },
-  { id: 'open_100', name: '盲盒大师', icon: '🏆', desc: '累计拆开100个盲盒', category: 'discover', condition: '拆开100个盲盒', check: s => s.totalOpens >= 100 },
-  { id: 'rare_hunter', name: '稀有猎手', icon: '💙', desc: '发现5个稀有内容', category: 'discover', condition: '发现5个稀有', check: s => s.rareFinds >= 5 },
-  { id: 'epic_hunter', name: '史诗猎手', icon: '💜', desc: '发现3个史诗内容', category: 'discover', condition: '发现3个史诗', check: s => s.epicFinds >= 3 },
-  { id: 'legend_hunter', name: '传说猎手', icon: '👑', desc: '发现1个传说内容', category: 'discover', condition: '发现1个传说', check: s => s.legendaryFinds >= 1 },
-
-  // 推广类
-  { id: 'first_promote', name: '初试身手', icon: '🌱', desc: '第一次帮推', category: 'promote', condition: '帮推1次', check: s => s.totalPromotes >= 1 },
-  { id: 'promote_10', name: '推广达人', icon: '🔥', desc: '累计帮推10次', category: 'promote', condition: '帮推10次', check: s => s.totalPromotes >= 10 },
-  { id: 'promote_50', name: '推广大师', icon: '🏅', desc: '累计帮推50次', category: 'promote', condition: '帮推50次', check: s => s.totalPromotes >= 50 },
-  { id: 'promote_hit', name: '星探之眼', icon: '🔭', desc: '帮推命中率超过60%', category: 'promote', condition: '命中率>60%', check: s => s.promoteHitRate >= 0.6 },
-  { id: 'viral', name: '病毒传播', icon: '⚡', desc: '帮推的话题达到100+曝光', category: 'promote', condition: '100+曝光', check: s => s.totalExposureContributed >= 100 },
-
-  // 造浪类
-  { id: 'first_wave', name: '试水者', icon: '🌊', desc: '第一次发起推广', category: 'wave', condition: '发起1次推广', check: s => (s.wavesCreated.small + s.wavesCreated.medium + s.wavesCreated.big + s.wavesCreated.tsunami) >= 1 },
-  { id: 'medium_wave', name: '中浪操盘', icon: '🌊🌊', desc: '发起的推广达到中浪', category: 'wave', condition: '中浪1次', check: s => s.wavesCreated.medium >= 1 },
-  { id: 'big_wave', name: '巨浪制造者', icon: '🌊🌊🌊', desc: '发起的推广达到巨浪', category: 'wave', condition: '巨浪1次', check: s => s.wavesCreated.big >= 1 },
-  { id: 'tsunami', name: '浪潮之王', icon: '🌊🌊🌊🌊', desc: '发起的推广达到海啸', category: 'wave', condition: '海啸1次', check: s => s.wavesCreated.tsunami >= 1 },
-  { id: 'wave_master', name: '连续造浪', icon: '🔥', desc: '发起3个中浪以上推广', category: 'wave', condition: '3个中浪+', check: s => (s.wavesCreated.medium + s.wavesCreated.big + s.wavesCreated.tsunami) >= 3 },
+export const ACHIEVEMENTS: AchievementDef[] = [
+  // 帮推类
+  {
+    id: 'first_promote',
+    name: '初出茅庐',
+    icon: '🌱',
+    desc: '第一次帮推内容',
+    category: 'promote',
+    condition: '帮推1次',
+    rewardPoints: 20,
+    check: s => s.totalPromotes >= 1,
+    getProgress: s => ({ current: Math.min(s.totalPromotes, 1), max: 1 }),
+  },
+  {
+    id: 'promote_10',
+    name: '热心肠',
+    icon: '🔥',
+    desc: '累计帮推10次',
+    category: 'promote',
+    condition: '帮推10次',
+    rewardPoints: 50,
+    check: s => s.totalPromotes >= 10,
+    getProgress: s => ({ current: Math.min(s.totalPromotes, 10), max: 10 }),
+  },
+  {
+    id: 'promote_100',
+    name: '帮推达人',
+    icon: '🏅',
+    desc: '累计帮推100次',
+    category: 'promote',
+    condition: '帮推100次',
+    rewardPoints: 200,
+    check: s => s.totalPromotes >= 100,
+    getProgress: s => ({ current: Math.min(s.totalPromotes, 100), max: 100 }),
+  },
 
   // 创作类
-  { id: 'first_content', name: '创作者', icon: '✍️', desc: '第一次发布内容', category: 'create', condition: '发布1条', check: s => s.contentPublished >= 1 },
-  { id: 'content_10', name: '内容达人', icon: '📝', desc: '发布10条内容', category: 'create', condition: '发布10条', check: s => s.contentPublished >= 10 },
-  { id: 'content_50', name: '内容大师', icon: '📚', desc: '发布50条内容', category: 'create', condition: '发布50条', check: s => s.contentPublished >= 50 },
+  {
+    id: 'first_content',
+    name: '内容新星',
+    icon: '⭐',
+    desc: '发布第一条内容',
+    category: 'create',
+    condition: '发布1条内容',
+    rewardPoints: 10,
+    check: s => s.contentPublished >= 1,
+    getProgress: s => ({ current: Math.min(s.contentPublished, 1), max: 1 }),
+  },
+  {
+    id: 'content_10',
+    name: '创作达人',
+    icon: '✍️',
+    desc: '发布10条内容',
+    category: 'create',
+    condition: '发布10条内容',
+    rewardPoints: 50,
+    check: s => s.contentPublished >= 10,
+    getProgress: s => ({ current: Math.min(s.contentPublished, 10), max: 10 }),
+  },
+  {
+    id: 'content_50',
+    name: '创作大师',
+    icon: '📚',
+    desc: '发布50条内容',
+    category: 'create',
+    condition: '发布50条内容',
+    rewardPoints: 200,
+    check: s => s.contentPublished >= 50,
+    getProgress: s => ({ current: Math.min(s.contentPublished, 50), max: 50 }),
+  },
 
-  // 粉丝类
-  { id: 'first_fan_promote', name: '路人粉', icon: '👋', desc: '第一次为偶像发起推广', category: 'fan', condition: '为偶像推广1次', check: s => s.fanPromotes >= 1 },
-  { id: 'fan_10', name: '忠实粉', icon: '❤️', desc: '为偶像发起10次推广', category: 'fan', condition: '为偶像推广10次', check: s => s.fanPromotes >= 10 },
-  { id: 'fan_leader', name: '粉丝团长', icon: '👑', desc: '带动100人帮推', category: 'fan', condition: '带动100人帮推', check: s => s.fanBoosts >= 100 },
+  // 签到类
+  {
+    id: 'checkin_7',
+    name: '铁杆粉丝',
+    icon: '🔥',
+    desc: '连续签到7天',
+    category: 'checkin',
+    condition: '连续签到7天',
+    rewardPoints: 50,
+    check: s => s.consecutiveCheckInDays >= 7,
+    getProgress: s => ({ current: Math.min(s.consecutiveCheckInDays, 7), max: 7 }),
+  },
+  {
+    id: 'checkin_30',
+    name: '签到达人',
+    icon: '💎',
+    desc: '连续签到30天',
+    category: 'checkin',
+    condition: '连续签到30天',
+    rewardPoints: 200,
+    check: s => s.consecutiveCheckInDays >= 30,
+    getProgress: s => ({ current: Math.min(s.consecutiveCheckInDays, 30), max: 30 }),
+  },
 
-  // 特殊
-  { id: 'streak_7', name: '坚持不懈', icon: '🔥', desc: '连续活跃7天', category: 'special', condition: '连续7天', check: s => s.streak >= 7 },
-  { id: 'streak_30', name: '铁杆用户', icon: '💎', desc: '连续活跃30天', category: 'special', condition: '连续30天', check: s => s.streak >= 30 },
-  { id: 'wave_participant_10', name: '造浪参与者', icon: '🏄', desc: '参与10次巨浪/中浪推广', category: 'special', condition: '参与10次浪潮', check: s => s.wavesParticipated >= 10 },
+  // 社交类
+  {
+    id: 'first_like',
+    name: '点赞新手',
+    icon: '👍',
+    desc: '第一次点赞',
+    category: 'social',
+    condition: '点赞1次',
+    rewardPoints: 5,
+    check: s => s.totalLikes >= 1,
+    getProgress: s => ({ current: Math.min(s.totalLikes, 1), max: 1 }),
+  },
+  {
+    id: 'first_comment',
+    name: '评论新手',
+    icon: '💬',
+    desc: '第一次评论',
+    category: 'social',
+    condition: '评论1次',
+    rewardPoints: 5,
+    check: s => s.totalComments >= 1,
+    getProgress: s => ({ current: Math.min(s.totalComments, 1), max: 1 }),
+  },
+  {
+    id: 'followers_10',
+    name: '小有人气',
+    icon: '👥',
+    desc: '获得10个粉丝',
+    category: 'social',
+    condition: '10个粉丝',
+    rewardPoints: 30,
+    check: s => s.followers >= 10,
+    getProgress: s => ({ current: Math.min(s.followers, 10), max: 10 }),
+  },
+
+  // 特殊类
+  {
+    id: 'points_1000',
+    name: '积分达人',
+    icon: '💰',
+    desc: '累计获得1000积分',
+    category: 'special',
+    condition: '累计1000积分',
+    rewardPoints: 100,
+    check: s => s.totalPoints >= 1000,
+    getProgress: s => ({ current: Math.min(s.totalPoints, 1000), max: 1000 }),
+  },
+  {
+    id: 'task_1',
+    name: '任务新手',
+    icon: '📋',
+    desc: '完成第一个任务',
+    category: 'special',
+    condition: '完成1个任务',
+    rewardPoints: 20,
+    check: s => s.tasksCompleted >= 1,
+    getProgress: s => ({ current: Math.min(s.tasksCompleted, 1), max: 1 }),
+  },
 ]
 
 /**
- * 检查用户解锁了哪些成就
+ * 获取用户统计数据
  */
-export function checkAchievements(stats: UserStats): Achievement[] {
-  return ACHIEVEMENTS.filter(a => a.check(stats))
+export async function fetchUserStats(userId: string): Promise<UserStats> {
+  const [
+    { count: promoteCount },
+    { count: contentCount },
+    { count: likeCount },
+    { count: commentCount },
+    { data: signInData },
+    { count: followerCount },
+    { data: userData },
+    { count: taskCount },
+    { count: voteCount },
+  ] = await Promise.all([
+    supabase.from('promotes').select('*', { count: 'exact', head: true }).eq('user_id', userId),
+    supabase.from('contents').select('*', { count: 'exact', head: true }).eq('creator_id', userId),
+    supabase.from('interactions').select('*', { count: 'exact', head: true }).eq('user_id', userId).eq('action', 'like'),
+    supabase.from('comments').select('*', { count: 'exact', head: true }).eq('user_id', userId),
+    supabase.from('sign_ins').select('consecutive_days').eq('user_id', userId).order('sign_date', { ascending: false }).limit(1).single(),
+    supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', userId),
+    supabase.from('users').select('points').eq('id', userId).single(),
+    supabase.from('task_participants').select('*', { count: 'exact', head: true }).eq('user_id', userId).eq('status', 'completed'),
+    supabase.from('vote_records').select('*', { count: 'exact', head: true }).eq('user_id', userId),
+  ])
+
+  // 获取总签到天数
+  const { count: totalCheckIn } = await supabase
+    .from('sign_ins')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+
+  return {
+    totalPromotes: promoteCount || 0,
+    contentPublished: contentCount || 0,
+    totalLikes: likeCount || 0,
+    totalComments: commentCount || 0,
+    consecutiveCheckInDays: signInData?.consecutive_days || 0,
+    totalCheckInDays: totalCheckIn || 0,
+    followers: followerCount || 0,
+    totalPoints: userData?.points || 0,
+    tasksCompleted: taskCount || 0,
+    votesParticipated: voteCount || 0,
+  }
 }
 
 /**
- * 获取成就进度
+ * 检查并解锁成就
  */
-export function getAchievementProgress(id: string, stats: UserStats): number {
-  const achievement = ACHIEVEMENTS.find(a => a.id === id)
-  if (!achievement) return 0
-  if (achievement.check(stats)) return 100
+export async function checkAndUnlockAchievements(userId: string): Promise<string[]> {
+  const stats = await fetchUserStats(userId)
+  const unlockedIds: string[] = []
 
-  // 根据不同成就计算进度
-  switch (id) {
-    case 'first_open': return Math.min(100, stats.totalOpens * 100)
-    case 'open_10': return Math.min(100, (stats.totalOpens / 10) * 100)
-    case 'open_100': return Math.min(100, (stats.totalOpens / 100) * 100)
-    case 'rare_hunter': return Math.min(100, (stats.rareFinds / 5) * 100)
-    case 'epic_hunter': return Math.min(100, (stats.epicFinds / 3) * 100)
-    case 'legend_hunter': return Math.min(100, stats.legendaryFinds * 100)
-    case 'first_promote': return Math.min(100, stats.totalPromotes * 100)
-    case 'promote_10': return Math.min(100, (stats.totalPromotes / 10) * 100)
-    case 'promote_50': return Math.min(100, (stats.totalPromotes / 50) * 100)
-    case 'first_content': return Math.min(100, stats.contentPublished * 100)
-    case 'content_10': return Math.min(100, (stats.contentPublished / 10) * 100)
-    case 'content_50': return Math.min(100, (stats.contentPublished / 50) * 100)
-    case 'streak_7': return Math.min(100, (stats.streak / 7) * 100)
-    case 'streak_30': return Math.min(100, (stats.streak / 30) * 100)
-    case 'wave_participant_10': return Math.min(100, (stats.wavesParticipated / 10) * 100)
-    default: return 0
+  for (const achievement of ACHIEVEMENTS) {
+    if (achievement.check(stats)) {
+      try {
+        const result = await unlockAchievement(userId, achievement.id, achievement.rewardPoints)
+        if (result) {
+          unlockedIds.push(achievement.id)
+        }
+      } catch {
+        // 单个成就解锁失败不影响其他
+      }
+    }
   }
+
+  return unlockedIds
+}
+
+/**
+ * 获取成就进度列表
+ */
+export async function getAchievementProgressList(userId: string) {
+  const stats = await fetchUserStats(userId)
+  const unlocked = await getUserAchievements(userId)
+  const unlockedSet = new Set(unlocked.map(a => a.achievement_id))
+
+  return ACHIEVEMENTS.map(a => ({
+    ...a,
+    isUnlocked: unlockedSet.has(a.id),
+    progress: a.getProgress(stats),
+  }))
 }

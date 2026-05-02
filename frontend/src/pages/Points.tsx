@@ -1,86 +1,74 @@
-import { useState } from 'react'
+// ===== 积分中心（真实数据版） =====
 
-export default function Points({ user }: { user: any }) {
-  const [activeTab, setActiveTab] = useState<'earn' | 'spend' | 'history' | 'level' | 'vip'>('earn')
+import { useState, useEffect, useCallback } from 'react'
+import { getPointsHistory, getPointsBalance } from '../lib/supabase/client'
+import { getLevelTitle, getLevelBadge, getLevelColor } from '../lib/rewardSystem'
 
-  const currentPoints = user?.points || 0
-  const currentMoney = user?.money || 0
-  
-  // 计算当前等级（100级，指数级）- 积分等级
-  const calculateLevel = (points: number) => {
-    if (points <= 0) return 1
-    const level = Math.floor(Math.log(points / 10) / Math.log(1.15)) + 1
-    return Math.min(100, Math.max(1, level))
-  }
-  
-  // 计算VIP等级（100级，指数级）- 消费等级
-  const calculateVIPLevel = (money: number) => {
-    if (money <= 0) return 1
-    const level = Math.floor(Math.log(money / 10) / Math.log(1.15)) + 1
-    return Math.min(100, Math.max(1, level))
-  }
-  
-  // 计算指定等级所需积分
-  const getLevelPoints = (level: number) => {
-    return Math.floor(10 * Math.pow(1.15, level - 1))
-  }
-  
-  // 计算累计积分
-  const getCumulativePoints = (level: number) => {
-    let total = 0
-    for (let i = 1; i <= level; i++) {
-      total += getLevelPoints(i)
+interface PointsProps {
+  user: any
+}
+
+export default function Points({ user }: PointsProps) {
+  const [activeTab, setActiveTab] = useState<'earn' | 'spend' | 'history' | 'level'>('earn')
+  const [pointsBalance, setPointsBalance] = useState(0)
+  const [history, setHistory] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const loadPointsData = useCallback(async () => {
+    if (!user) return
+    try {
+      const [balance, historyData] = await Promise.all([
+        getPointsBalance(user.id),
+        getPointsHistory(user.id, 50),
+      ])
+      setPointsBalance(balance)
+      setHistory(historyData)
+    } catch (err) {
+      console.error('加载积分数据失败:', err)
+    } finally {
+      setLoading(false)
     }
-    return total
-  }
-  
-  const currentLevel = calculateLevel(currentPoints)
-  const currentVIPLevel = calculateVIPLevel(currentMoney)
-  const nextLevelPoints = getLevelPoints(currentLevel + 1)
-  const nextVIPLevelPoints = getLevelPoints(currentVIPLevel + 1)
-  const progress = ((currentPoints - getCumulativePoints(currentLevel - 1)) / (getCumulativePoints(currentLevel) - getCumulativePoints(currentLevel - 1))) * 100
-  const vipProgress = ((currentMoney - getCumulativePoints(currentVIPLevel - 1)) / (getCumulativePoints(currentVIPLevel) - getCumulativePoints(currentVIPLevel - 1))) * 100
+  }, [user])
+
+  useEffect(() => {
+    loadPointsData()
+  }, [loadPointsData])
+
+  const currentLevel = user?.level || 1
 
   const earnRules = [
-    { id: '1', action: '发布内容', points: '+10', icon: '📝', desc: '每发布一条内容' },
-    { id: '2', action: '被点赞', points: '+5', icon: '❤️', desc: '每被点赞一次' },
-    { id: '3', action: '被评论', points: '+5', icon: '💬', desc: '每被评论一次' },
-    { id: '4', action: '被转发', points: '+20', icon: '🔄', desc: '每被转发一次' },
-    { id: '5', action: '被推荐', points: '+50', icon: '⭐', desc: '每被推荐一次' },
-    { id: '6', action: '参与任务', points: '+50', icon: '📋', desc: '每参与一个任务' },
-    { id: '7', action: '完成任务', points: '+100', icon: '✅', desc: '每完成一个任务' },
-    { id: '8', action: '邀请好友', points: '+200', icon: '👥', desc: '每邀请一个好友注册' },
-    { id: '9', action: '连续签到', points: '+10~50', icon: '📅', desc: '连续签到奖励递增' },
+    { id: '1', action: '每日签到', points: '+10', icon: '📅', desc: '每天签到获得积分' },
+    { id: '2', action: '发布内容', points: '+10', icon: '📝', desc: '每发布一条内容' },
+    { id: '3', action: '点赞', points: '+5', icon: '❤️', desc: '每次点赞获得积分' },
+    { id: '4', action: '帮推内容', points: '+20', icon: '🚀', desc: '每次帮推获得积分' },
+    { id: '5', action: '评论', points: '+5', icon: '💬', desc: '每次评论获得积分' },
+    { id: '6', action: '完成任务', points: '按任务', icon: '📋', desc: '完成任务获得积分' },
+    { id: '7', action: '参与活动', points: '+10', icon: '🎯', desc: '参与活动获得积分' },
+    { id: '8', action: '解锁成就', points: '按成就', icon: '🏆', desc: '解锁成就获得积分' },
+    { id: '9', action: '连续签到', points: '+20~200', icon: '🔥', desc: '连续签到额外奖励' },
   ]
 
   const spendRules = [
-    { id: '1', action: '普通推荐', points: '10', icon: '⭐', desc: '+100曝光' },
-    { id: '2', action: '强力推荐', points: '50', icon: '⭐⭐', desc: '+500曝光' },
-    { id: '3', action: '超级推荐', points: '100', icon: '⭐⭐⭐', desc: '+2000曝光' },
-    { id: '4', action: '品牌推荐', points: '500', icon: '🏢', desc: '+10000曝光' },
-    { id: '5', action: '发起任务', points: '自定义', icon: '📋', desc: '设置任务奖励' },
-    { id: '6', action: '提升曝光', points: '100~1000', icon: '🚀', desc: '增加内容曝光' },
+    { id: '1', action: '投票', points: '按投票', icon: '🗳️', desc: '参与投票消耗积分' },
+    { id: '2', action: '发起小浪', points: '100', icon: '🌊', desc: '基础推广' },
+    { id: '3', action: '发起中浪', points: '300', icon: '🌊', desc: '中等推广' },
+    { id: '4', action: '发起巨浪', points: '800', icon: '🌊', desc: '大规模推广' },
+    { id: '5', action: '曝光加速', points: '50', icon: '🚀', desc: '24h曝光翻倍' },
+    { id: '6', action: '置顶', points: '150', icon: '📌', desc: '置顶24小时' },
   ]
 
-  const history = [
-    { id: '1', action: '发布内容', points: '+10', time: '2分钟前', type: 'earn' },
-    { id: '2', action: '被点赞', points: '+5', time: '5分钟前', type: 'earn' },
-    { id: '3', action: '普通推荐', points: '-10', time: '1小时前', type: 'spend' },
-    { id: '4', action: '参与任务', points: '+50', time: '2小时前', type: 'earn' },
-    { id: '5', action: '被转发', points: '+20', time: '3小时前', type: 'earn' },
-    { id: '6', action: '提升曝光', points: '-100', time: '1天前', type: 'spend' },
-  ]
+  // 计算本周统计
+  const weekStart = new Date()
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay())
+  weekStart.setHours(0, 0, 0, 0)
 
-  // 生成等级预览（每10级显示）
-  const levelPreview = Array.from({ length: 10 }, (_, i) => {
-    const level = (i + 1) * 10
-    return {
-      level,
-      points: getLevelPoints(level),
-      cumulative: getCumulativePoints(level),
-      isActive: currentLevel >= level
-    }
-  })
+  const weekEarned = history
+    .filter(h => h.amount > 0 && new Date(h.created_at) >= weekStart)
+    .reduce((sum, h) => sum + h.amount, 0)
+
+  const weekSpent = history
+    .filter(h => h.amount < 0 && new Date(h.created_at) >= weekStart)
+    .reduce((sum, h) => sum + Math.abs(h.amount), 0)
 
   return (
     <div className="max-w-lg mx-auto bg-black min-h-screen pb-16">
@@ -88,84 +76,56 @@ export default function Points({ user }: { user: any }) {
         <h1 className="text-xl font-bold text-white">积分中心</h1>
       </header>
 
+      {/* 积分概览 */}
       <div className="px-4 py-6">
         <div className="bg-gradient-to-r from-primary to-secondary rounded-2xl p-6">
           <div className="flex items-center justify-between mb-4">
             <div>
               <div className="text-white/80 text-sm">我的积分</div>
-              <div className="text-5xl font-bold text-white">{currentPoints}</div>
+              <div className="text-5xl font-bold text-white">{loading ? '...' : pointsBalance}</div>
             </div>
             <div className="text-right">
-              <div className="text-white/80 text-sm">当前等级</div>
-              <div className="text-5xl font-bold text-white">Lv.{currentLevel}</div>
-            </div>
-          </div>
-          <div className="mb-2">
-            <div className="flex justify-between text-sm text-white/60 mb-1">
-              <span>Lv.{currentLevel}</span>
-              <span>Lv.{currentLevel + 1}</span>
-            </div>
-            <div className="w-full bg-white/20 rounded-full h-3">
-              <div className="bg-white h-3 rounded-full transition-all" style={{ width: `${Math.min(100, progress)}%` }} />
-            </div>
-            <div className="text-center text-sm text-white/60 mt-1">
-              还需 {nextLevelPoints - currentPoints} 积分升级
-            </div>
-          </div>
-        </div>
-        
-        <div className="mt-4 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-2xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="text-white/80 text-sm">累计消费</div>
-              <div className="text-5xl font-bold text-white">¥{currentMoney}</div>
-            </div>
-            <div className="text-right">
-              <div className="text-white/80 text-sm">VIP等级</div>
-              <div className="text-5xl font-bold text-white">VIP.{currentVIPLevel}</div>
-            </div>
-          </div>
-          <div className="mb-2">
-            <div className="flex justify-between text-sm text-white/60 mb-1">
-              <span>VIP.{currentVIPLevel}</span>
-              <span>VIP.{currentVIPLevel + 1}</span>
-            </div>
-            <div className="w-full bg-white/20 rounded-full h-3">
-              <div className="bg-white h-3 rounded-full transition-all" style={{ width: `${Math.min(100, vipProgress)}%` }} />
-            </div>
-            <div className="text-center text-sm text-white/60 mt-1">
-              还需 ¥{nextVIPLevelPoints - currentMoney} 消费升级
+              <div className="flex items-center gap-2">
+                <span className="text-3xl">{getLevelBadge(currentLevel)}</span>
+                <span className={`text-xl font-bold ${getLevelColor(currentLevel)}`}>
+                  {getLevelTitle(currentLevel)}
+                </span>
+              </div>
+              <div className="text-white/60 text-sm">Lv.{currentLevel}</div>
             </div>
           </div>
         </div>
       </div>
 
+      {/* 标签页 */}
       <div className="bg-black px-4 py-2 border-b border-white/10">
-        <div className="flex gap-3">
-          <button onClick={() => setActiveTab('earn')} className={`flex-1 py-2 rounded-lg text-sm font-medium ${activeTab === 'earn' ? 'bg-white text-black' : 'bg-white/10 text-white/60'}`}>
-            💰 赚积分
-          </button>
-          <button onClick={() => setActiveTab('spend')} className={`flex-1 py-2 rounded-lg text-sm font-medium ${activeTab === 'spend' ? 'bg-white text-black' : 'bg-white/10 text-white/60'}`}>
-            💸 花积分
-          </button>
-          <button onClick={() => setActiveTab('level')} className={`flex-1 py-2 rounded-lg text-sm font-medium ${activeTab === 'level' ? 'bg-white text-black' : 'bg-white/10 text-white/60'}`}>
-            📊 等级
-          </button>
-          <button onClick={() => setActiveTab('vip')} className={`flex-1 py-2 rounded-lg text-sm font-medium ${activeTab === 'vip' ? 'bg-white text-black' : 'bg-white/10 text-white/60'}`}>
-            👑 VIP
-          </button>
-          <button onClick={() => setActiveTab('history')} className={`flex-1 py-2 rounded-lg text-sm font-medium ${activeTab === 'history' ? 'bg-white text-black' : 'bg-white/10 text-white/60'}`}>
-            📝 记录
-          </button>
+        <div className="flex gap-2">
+          {[
+            { key: 'earn' as const, label: '💰 赚积分' },
+            { key: 'spend' as const, label: '💸 花积分' },
+            { key: 'level' as const, label: '📊 等级' },
+            { key: 'history' as const, label: '📝 记录' },
+          ].map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium ${
+                activeTab === tab.key ? 'bg-white text-black' : 'bg-white/10 text-white/60'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
 
       <div className="p-4 space-y-3">
+        {/* 赚积分 */}
         {activeTab === 'earn' && (
           <>
             <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 mb-4">
               <h3 className="text-green-400 font-bold mb-2">💰 如何赚取积分</h3>
-              <p className="text-white/60 text-sm">通过发布内容、参与任务、被推荐等方式赚取积分</p>
+              <p className="text-white/60 text-sm">通过签到、发布内容、帮推、评论等方式赚取积分</p>
             </div>
             {earnRules.map(rule => (
               <div key={rule.id} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl">
@@ -180,11 +140,12 @@ export default function Points({ user }: { user: any }) {
           </>
         )}
 
+        {/* 花积分 */}
         {activeTab === 'spend' && (
           <>
             <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 mb-4">
               <h3 className="text-red-400 font-bold mb-2">💸 积分用途</h3>
-              <p className="text-white/60 text-sm">积分可用于推荐、提升曝光、发起任务等</p>
+              <p className="text-white/60 text-sm">积分可用于推广、投票、置顶等</p>
             </div>
             {spendRules.map(rule => (
               <div key={rule.id} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl">
@@ -199,125 +160,103 @@ export default function Points({ user }: { user: any }) {
           </>
         )}
 
+        {/* 等级 */}
         {activeTab === 'level' && (
           <>
             <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 mb-4">
               <h3 className="text-blue-400 font-bold mb-2">📊 等级系统</h3>
-              <p className="text-white/60 text-sm">共100级，积分需求指数级增长</p>
+              <p className="text-white/60 text-sm">积分越多等级越高，解锁更多特权</p>
             </div>
-            
+
             <div className="bg-white/5 rounded-xl p-4 mb-4">
               <div className="text-center mb-4">
-                <div className="text-6xl font-bold text-primary">Lv.{currentLevel}</div>
-                <div className="text-white/60 text-sm">当前等级</div>
-              </div>
-              <div className="grid grid-cols-2 gap-4 text-center">
-                <div>
-                  <div className="text-2xl font-bold text-white">{currentPoints}</div>
-                  <div className="text-xs text-white/40">当前积分</div>
-                </div>
-                <div>
-                  <div className="text-2xl font-bold text-white">{nextLevelPoints}</div>
-                  <div className="text-xs text-white/40">下一级所需</div>
-                </div>
+                <div className="text-6xl mb-2">{getLevelBadge(currentLevel)}</div>
+                <div className="text-3xl font-bold text-white">{getLevelTitle(currentLevel)}</div>
+                <div className="text-white/60 text-sm">Lv.{currentLevel}</div>
               </div>
             </div>
 
             <div className="space-y-2">
-              {levelPreview.map(item => (
-                <div key={item.level} className={`flex items-center gap-3 p-3 rounded-xl ${item.isActive ? 'bg-primary/20 border border-primary/30' : 'bg-white/5'}`}>
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${item.isActive ? 'bg-primary text-white' : 'bg-white/10 text-white/40'}`}>
-                    {item.level}
+              {[
+                { level: 1, title: '泡沫', icon: '🫧' },
+                { level: 5, title: '水滴', icon: '💧' },
+                { level: 10, title: '小浪花', icon: '💎' },
+                { level: 20, title: '中流击水', icon: '⭐' },
+                { level: 30, title: '乘风破浪', icon: '🚀' },
+                { level: 40, title: '浪尖舞者', icon: '✨' },
+                { level: 50, title: '巨浪行者', icon: '💪' },
+                { level: 60, title: '潮汐大师', icon: '🔥' },
+                { level: 70, title: '风暴领主', icon: '⚡' },
+                { level: 80, title: '海洋之王', icon: '👑' },
+                { level: 90, title: '传奇巨浪', icon: '🌊' },
+              ].map(item => (
+                <div
+                  key={item.level}
+                  className={`flex items-center gap-3 p-3 rounded-xl ${
+                    currentLevel >= item.level
+                      ? 'bg-primary/20 border border-primary/30'
+                      : 'bg-white/5'
+                  }`}
+                >
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                    currentLevel >= item.level ? 'bg-primary text-white' : 'bg-white/10 text-white/40'
+                  }`}>
+                    {item.icon}
                   </div>
                   <div className="flex-1">
-                    <div className="text-sm text-white">Lv.{item.level}</div>
-                    <div className="text-xs text-white/40">需要 {item.points} 积分</div>
+                    <div className="text-sm text-white">Lv.{item.level} {item.title}</div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-sm text-white/60">累计 {item.cumulative}</div>
-                    {item.isActive && <div className="text-xs text-primary">✓ 已达成</div>}
-                  </div>
+                  {currentLevel >= item.level && (
+                    <div className="text-xs text-primary">✓ 已达成</div>
+                  )}
                 </div>
               ))}
             </div>
           </>
         )}
 
-        {activeTab === 'vip' && (
-          <>
-            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 mb-4">
-              <h3 className="text-yellow-400 font-bold mb-2">👑 VIP等级</h3>
-              <p className="text-white/60 text-sm">消费即可升级VIP，共100级</p>
-            </div>
-            
-            <div className="bg-white/5 rounded-xl p-4 mb-4">
-              <div className="text-center mb-4">
-                <div className="text-6xl font-bold text-yellow-500">VIP.{currentVIPLevel}</div>
-                <div className="text-white/60 text-sm">当前VIP等级</div>
-              </div>
-              <div className="grid grid-cols-2 gap-4 text-center">
-                <div>
-                  <div className="text-2xl font-bold text-white">¥{currentMoney}</div>
-                  <div className="text-xs text-white/40">累计消费</div>
-                </div>
-                <div>
-                  <div className="text-2xl font-bold text-white">¥{nextVIPLevelPoints}</div>
-                  <div className="text-xs text-white/40">下一级所需</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              {levelPreview.map(item => {
-                const vipItem = { ...item, isActive: currentVIPLevel >= item.level }
-                return (
-                  <div key={item.level} className={`flex items-center gap-3 p-3 rounded-xl ${vipItem.isActive ? 'bg-yellow-500/20 border border-yellow-500/30' : 'bg-white/5'}`}>
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${vipItem.isActive ? 'bg-yellow-500 text-white' : 'bg-white/10 text-white/40'}`}>
-                      {item.level}
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-sm text-white">VIP.{item.level}</div>
-                      <div className="text-xs text-white/40">需要消费 ¥{item.points}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm text-white/60">累计 ¥{item.cumulative}</div>
-                      {vipItem.isActive && <div className="text-xs text-yellow-500">✓ 已达成</div>}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </>
-        )}
-
+        {/* 历史记录 */}
         {activeTab === 'history' && (
           <>
             <div className="bg-white/5 rounded-xl p-4 mb-4">
               <div className="grid grid-cols-3 gap-4 text-center">
                 <div>
-                  <div className="text-2xl font-bold text-green-400">+385</div>
+                  <div className="text-2xl font-bold text-green-400">+{weekEarned}</div>
                   <div className="text-xs text-white/40">本周获得</div>
                 </div>
                 <div>
-                  <div className="text-2xl font-bold text-red-400">-110</div>
+                  <div className="text-2xl font-bold text-red-400">-{weekSpent}</div>
                   <div className="text-xs text-white/40">本周消耗</div>
                 </div>
                 <div>
-                  <div className="text-2xl font-bold text-primary">{currentPoints}</div>
+                  <div className="text-2xl font-bold text-primary">{pointsBalance}</div>
                   <div className="text-xs text-white/40">当前积分</div>
                 </div>
               </div>
             </div>
-            {history.map(item => (
-              <div key={item.id} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl">
-                <span className="text-2xl">{item.type === 'earn' ? '💰' : '💸'}</span>
-                <div className="flex-1">
-                  <div className="font-medium text-white text-sm">{item.action}</div>
-                  <div className="text-xs text-white/40">{item.time}</div>
-                </div>
-                <span className={`font-bold ${item.type === 'earn' ? 'text-green-400' : 'text-red-400'}`}>{item.points}</span>
+
+            {loading ? (
+              <div className="text-center py-10 text-white/40">加载中...</div>
+            ) : history.length === 0 ? (
+              <div className="text-center py-10">
+                <div className="text-white/60">暂无积分记录</div>
               </div>
-            ))}
+            ) : (
+              history.map(record => (
+                <div key={record.id} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl">
+                  <span className="text-2xl">{record.amount > 0 ? '💰' : '💸'}</span>
+                  <div className="flex-1">
+                    <div className="font-medium text-white text-sm">{record.description}</div>
+                    <div className="text-xs text-white/40">
+                      {new Date(record.created_at).toLocaleString('zh-CN')}
+                    </div>
+                  </div>
+                  <span className={`font-bold ${record.amount > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {record.amount > 0 ? '+' : ''}{record.amount}
+                  </span>
+                </div>
+              ))
+            )}
           </>
         )}
       </div>

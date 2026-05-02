@@ -12,12 +12,10 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 // ===== 认证 =====
 
 export async function signUp(username: string, password: string, name: string) {
-  // 用邮箱格式注册（Supabase Auth 要求邮箱）
   const email = `${username}@julang.app`
   const { data, error } = await supabase.auth.signUp({ email, password })
   if (error) throw error
 
-  // 创建用户记录
   if (data.user) {
     const { error: dbError } = await supabase.from('users').insert({
       id: data.user.id,
@@ -171,7 +169,6 @@ export async function createMeme(meme: {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
-  // 获取用户信息
   const { data: userData } = await supabase
     .from('users')
     .select('name, avatar')
@@ -196,7 +193,6 @@ export async function toggleLike(targetType: string, targetId: string) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) throw new Error('Not authenticated')
 
-  // 检查是否已点赞
   const { data: existing } = await supabase
     .from('interactions')
     .select('id')
@@ -207,11 +203,9 @@ export async function toggleLike(targetType: string, targetId: string) {
     .single()
 
   if (existing) {
-    // 取消点赞
     await supabase.from('interactions').delete().eq('id', existing.id)
     return false
   } else {
-    // 点赞
     await supabase.from('interactions').insert({
       user_id: user.id,
       target_type: targetType,
@@ -300,8 +294,62 @@ export async function getUserById(id: string) {
   return data
 }
 
-export async function updateUserPoints(userId: string, amount: number, type: string, description: string) {
-  // 获取当前积分
+// ===== 积分系统 =====
+
+// 每日积分上限配置
+const DAILY_POINT_LIMITS: Record<string, number> = {
+  checkin: 10,
+  publish: 50,
+  like: 25,
+  promote: 100,
+  comment: 25,
+  vote: 50,
+  task: 200,
+}
+const DAILY_TOTAL_LIMIT = 500
+
+async function checkDailyLimit(userId: string, type: string, amount: number): Promise<boolean> {
+  const today = new Date().toISOString().split('T')[0]
+  const { data: limitRecord } = await supabase
+    .from('daily_point_limits')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('limit_date', today)
+    .single()
+
+  if (!limitRecord) {
+    await supabase.from('daily_point_limits').insert({
+      user_id: userId,
+      limit_date: today,
+      total_earned: amount,
+      breakdown: { [type]: amount },
+    })
+    return true
+  }
+
+  const breakdown = (limitRecord.breakdown as Record<string, number>) || {}
+  const typeTotal = (breakdown[type] || 0) + amount
+  const newTotal = limitRecord.total_earned + amount
+
+  const typeLimit = DAILY_POINT_LIMITS[type]
+  if (typeLimit && typeTotal > typeLimit) return false
+  if (newTotal > DAILY_TOTAL_LIMIT) return false
+
+  breakdown[type] = typeTotal
+  await supabase
+    .from('daily_point_limits')
+    .update({ total_earned: newTotal, breakdown })
+    .eq('id', limitRecord.id)
+
+  return true
+}
+
+export async function earnPoints(userId: string, amount: number, type: string, description: string) {
+  if (amount <= 0) throw new Error('Amount must be positive')
+
+  const allowed = await checkDailyLimit(userId, type, amount)
+  if (!allowed) throw new Error('今日该类积分已达上限')
+
   const { data: user } = await supabase
     .from('users')
     .select('points, level, experience')
@@ -311,9 +359,8 @@ export async function updateUserPoints(userId: string, amount: number, type: str
   if (!user) throw new Error('User not found')
 
   const newPoints = user.points + amount
-  const newExp = user.experience + Math.abs(amount)
+  const newExp = (user.experience || 0) + amount
 
-  // 计算新等级（指数增长公式）
   let newLevel = 1
   let totalRequired = 0
   for (let i = 1; i <= 100; i++) {
@@ -322,19 +369,636 @@ export async function updateUserPoints(userId: string, amount: number, type: str
     else break
   }
 
-  // 更新用户
   await supabase
     .from('users')
     .update({ points: newPoints, level: newLevel, experience: newExp })
     .eq('id', userId)
 
-  // 记录积分日志
   await supabase.from('point_logs').insert({
     user_id: userId,
     amount,
     type,
     description,
   })
+
+  return { points: newPoints, level: newLevel, experience: newExp }
+}
+
+export async function spendPoints(userId: string, amount: number, type: string, description: string) {
+  if (amount <= 0) throw new Error('Amount must be positive')
+
+  const { data: user } = await supabase
+    .from('users')
+    .select('points')
+    .eq('id', userId)
+    .single()
+
+  if (!user) throw new Error('User not found')
+  if (user.points < amount) throw new Error('积分不足')
+
+  const newPoints = user.points - amount
+
+  await supabase
+    .from('users')
+    .update({ points: newPoints })
+    .eq('id', userId)
+
+  await supabase.from('point_logs').insert({
+    user_id: userId,
+    amount: -amount,
+    type,
+    description,
+  })
+
+  return { points: newPoints }
+}
+
+export async function getPointsHistory(userId: string, limit = 50) {
+  const { data, error } = await supabase
+    .from('point_logs')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (error) throw error
+  return data || []
+}
+
+export async function getPointsBalance(userId: string) {
+  const { data: user } = await supabase
+    .from('users')
+    .select('points')
+    .eq('id', userId)
+    .single()
+
+  if (!user) throw new Error('User not found')
+  return user.points
+}
+
+// ===== 帮推系统 =====
+
+export async function promoteContent(userId: string, contentId: string) {
+  const { data: existing } = await supabase
+    .from('promotes')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('content_id', contentId)
+    .single()
+
+  if (existing) throw new Error('已经帮推过该内容')
+
+  const result = await earnPoints(userId, 20, 'promote', '帮推内容获得积分')
+
+  const { data: promote, error } = await supabase.from('promotes').insert({
+    user_id: userId,
+    content_id: contentId,
+    points_earned: 20,
+  }).select().single()
+
+  if (error) throw error
+
+  // 更新内容帮推数
+  const { data: contentData } = await supabase
+    .from('contents')
+    .select('promote_count')
+    .eq('id', contentId)
+    .single()
+
+  if (contentData) {
+    await supabase
+      .from('contents')
+      .update({ promote_count: (contentData.promote_count || 0) + 1 })
+      .eq('id', contentId)
+  }
+
+  return { promote, points: result }
+}
+
+export async function getPromoteHistory(userId: string, limit = 50) {
+  const { data, error } = await supabase
+    .from('promotes')
+    .select('*, contents(title, type, cover_url)')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (error) throw error
+  return data || []
+}
+
+export async function getPromoteChain(contentId: string) {
+  const { data, error } = await supabase
+    .from('promotes')
+    .select('*, users(name, avatar)')
+    .eq('content_id', contentId)
+    .order('created_at', { ascending: true })
+
+  if (error) throw error
+  return data || []
+}
+
+export async function getPromoteCount(userId: string) {
+  const { count, error } = await supabase
+    .from('promotes')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+
+  if (error) throw error
+  return count || 0
+}
+
+export async function rewardPromoters(contentId: string, bonusAmount: number) {
+  const { data: promoters } = await supabase
+    .from('promotes')
+    .select('user_id')
+    .eq('content_id', contentId)
+
+  if (!promoters) return
+
+  for (const p of promoters) {
+    try {
+      await earnPoints(p.user_id, bonusAmount, 'promote_bonus', '帮推内容火爆额外奖励')
+      await supabase
+        .from('promotes')
+        .update({ bonus_earned: bonusAmount })
+        .eq('user_id', p.user_id)
+        .eq('content_id', contentId)
+    } catch {
+      // 单个用户奖励失败不影响其他用户
+    }
+  }
+}
+
+// ===== 签到系统 =====
+
+export async function checkIn(userId: string) {
+  const today = new Date().toISOString().split('T')[0]
+
+  const { data: existing } = await supabase
+    .from('sign_ins')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('sign_date', today)
+    .single()
+
+  if (existing) throw new Error('今日已签到')
+
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
+  const { data: yesterdayRecord } = await supabase
+    .from('sign_ins')
+    .select('consecutive_days')
+    .eq('user_id', userId)
+    .eq('sign_date', yesterday)
+    .single()
+
+  const consecutiveDays = yesterdayRecord ? yesterdayRecord.consecutive_days + 1 : 1
+
+  let bonusPoints = 0
+  if (consecutiveDays >= 30) bonusPoints = 200
+  else if (consecutiveDays >= 7) bonusPoints = 50
+  else if (consecutiveDays >= 3) bonusPoints = 20
+
+  const totalPoints = 10 + bonusPoints
+
+  await supabase.from('sign_ins').insert({
+    user_id: userId,
+    sign_date: today,
+    consecutive_days: consecutiveDays,
+    points_earned: totalPoints,
+  })
+
+  const result = await earnPoints(userId, totalPoints, 'checkin', `签到奖励（连续${consecutiveDays}天）`)
+
+  return { consecutiveDays, pointsEarned: totalPoints, bonusPoints, ...result }
+}
+
+export async function getSignInHistory(userId: string, limit = 30) {
+  const { data, error } = await supabase
+    .from('sign_ins')
+    .select('*')
+    .eq('user_id', userId)
+    .order('sign_date', { ascending: false })
+    .limit(limit)
+
+  if (error) throw error
+  return data || []
+}
+
+export async function getTodaySignIn(userId: string) {
+  const today = new Date().toISOString().split('T')[0]
+  const { data } = await supabase
+    .from('sign_ins')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('sign_date', today)
+    .single()
+
+  return !!data
+}
+
+export async function getConsecutiveDays(userId: string) {
+  const { data } = await supabase
+    .from('sign_ins')
+    .select('sign_date, consecutive_days')
+    .eq('user_id', userId)
+    .order('sign_date', { ascending: false })
+    .limit(1)
+    .single()
+
+  if (!data) return 0
+
+  const today = new Date().toISOString().split('T')[0]
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0]
+
+  if (data.sign_date === today || data.sign_date === yesterday) {
+    return data.consecutive_days
+  }
+  return 0
+}
+
+// ===== 带积分的互动 =====
+
+export async function toggleLikeWithPoints(targetType: string, targetId: string) {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+
+  const { data: existing } = await supabase
+    .from('interactions')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('target_type', targetType)
+    .eq('target_id', targetId)
+    .eq('action', 'like')
+    .single()
+
+  if (existing) {
+    await supabase.from('interactions').delete().eq('id', existing.id)
+    return false
+  } else {
+    await supabase.from('interactions').insert({
+      user_id: user.id,
+      target_type: targetType,
+      target_id: targetId,
+      action: 'like',
+    })
+    try {
+      await earnPoints(user.id, 5, 'like', '点赞获得积分')
+    } catch {
+      // 积分获取失败不影响点赞
+    }
+    return true
+  }
+}
+
+export async function addCommentWithPoints(targetType: string, targetId: string, content: string) {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+
+  const { data, error } = await supabase.from('comments').insert({
+    user_id: user.id,
+    target_type: targetType,
+    target_id: targetId,
+    content,
+  }).select().single()
+
+  if (error) throw error
+
+  try {
+    await earnPoints(user.id, 5, 'comment', '评论获得积分')
+  } catch {
+    // 积分获取失败不影响评论
+  }
+
+  return data
+}
+
+// 兼容旧调用
+export async function updateUserPoints(userId: string, amount: number, type: string, description: string) {
+  if (amount > 0) {
+    return earnPoints(userId, amount, type, description)
+  } else {
+    return spendPoints(userId, Math.abs(amount), type, description)
+  }
+}
+
+// ===== 任务系统 =====
+
+export async function getTasks(type?: string) {
+  let query = supabase
+    .from('tasks')
+    .select('*')
+    .eq('status', 'active')
+    .order('created_at', { ascending: false })
+
+  if (type) {
+    query = query.eq('type', type)
+  }
+
+  const { data, error } = await query
+  if (error) throw error
+  return data || []
+}
+
+export async function joinTask(taskId: string, userId: string) {
+  const { data: existing } = await supabase
+    .from('task_participants')
+    .select('id')
+    .eq('task_id', taskId)
+    .eq('user_id', userId)
+    .single()
+
+  if (existing) throw new Error('已参与该任务')
+
+  const { data, error } = await supabase.from('task_participants').insert({
+    task_id: taskId,
+    user_id: userId,
+  }).select().single()
+
+  if (error) throw error
+
+  // 更新参与人数
+  const { data: task } = await supabase
+    .from('tasks')
+    .select('current_participants')
+    .eq('id', taskId)
+    .single()
+
+  if (task) {
+    await supabase
+      .from('tasks')
+      .update({ current_participants: task.current_participants + 1 })
+      .eq('id', taskId)
+  }
+
+  return data
+}
+
+export async function completeTask(taskId: string, userId: string) {
+  const { data: task } = await supabase
+    .from('tasks')
+    .select('reward_points')
+    .eq('id', taskId)
+    .single()
+
+  if (!task) throw new Error('任务不存在')
+
+  await supabase
+    .from('task_participants')
+    .update({ status: 'completed', completed_at: new Date().toISOString() })
+    .eq('task_id', taskId)
+    .eq('user_id', userId)
+
+  // 给积分奖励
+  if (task.reward_points > 0) {
+    await earnPoints(userId, task.reward_points, 'task', `完成任务获得积分`)
+  }
+
+  return { reward: task.reward_points }
+}
+
+export async function getUserTasks(userId: string) {
+  const { data, error } = await supabase
+    .from('task_participants')
+    .select('*, tasks(*)')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return data || []
+}
+
+// ===== 投票系统 =====
+
+export async function getVotes(status = 'active') {
+  const { data, error } = await supabase
+    .from('votes')
+    .select('*')
+    .eq('status', status)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return data || []
+}
+
+export async function getVoteById(id: string) {
+  const { data, error } = await supabase
+    .from('votes')
+    .select('*')
+    .eq('id', id)
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+export async function createVote(vote: {
+  title: string
+  description?: string
+  options: string[]
+  topic_id?: string
+  content_id?: string
+  vote_cost?: number
+  vote_reward?: number
+  end_date?: string
+}) {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+
+  const optionsWithCount = vote.options.map((text, index) => ({
+    index,
+    text,
+    vote_count: 0,
+  }))
+
+  const { data, error } = await supabase.from('votes').insert({
+    title: vote.title,
+    description: vote.description || '',
+    options: optionsWithCount,
+    topic_id: vote.topic_id,
+    content_id: vote.content_id,
+    vote_cost: vote.vote_cost || 0,
+    vote_reward: vote.vote_reward || 5,
+    end_date: vote.end_date,
+    created_by: user.id,
+  }).select().single()
+
+  if (error) throw error
+  return data
+}
+
+export async function castVote(voteId: string, optionIndex: number) {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+
+  // 获取投票信息
+  const { data: vote } = await supabase
+    .from('votes')
+    .select('*')
+    .eq('id', voteId)
+    .single()
+
+  if (!vote) throw new Error('投票不存在')
+  if (vote.status !== 'active') throw new Error('投票已结束')
+
+  // 检查是否已投过
+  const { data: existingVote } = await supabase
+    .from('vote_records')
+    .select('id')
+    .eq('vote_id', voteId)
+    .eq('user_id', user.id)
+    .single()
+
+  if (existingVote) throw new Error('已经投过票了')
+
+  // 如果需要消耗积分
+  if (vote.vote_cost > 0) {
+    await spendPoints(user.id, vote.vote_cost, 'vote', '投票消耗积分')
+  }
+
+  // 记录投票
+  const { error: recordError } = await supabase.from('vote_records').insert({
+    vote_id: voteId,
+    user_id: user.id,
+    option_index: optionIndex,
+    points_spent: vote.vote_cost,
+    points_earned: vote.vote_reward,
+  })
+
+  if (recordError) throw recordError
+
+  // 更新投票选项计数
+  const options = vote.options as { index: number; text: string; vote_count: number }[]
+  options[optionIndex].vote_count += 1
+
+  await supabase
+    .from('votes')
+    .update({
+      options,
+      total_votes: vote.total_votes + 1,
+    })
+    .eq('id', voteId)
+
+  // 给投票奖励积分
+  if (vote.vote_reward > 0) {
+    try {
+      await earnPoints(user.id, vote.vote_reward, 'vote', '投票获得积分')
+    } catch {
+      // 积分获取失败不影响投票
+    }
+  }
+
+  return { success: true, option: options[optionIndex] }
+}
+
+export async function getUserVoteRecords(userId: string) {
+  const { data, error } = await supabase
+    .from('vote_records')
+    .select('*, votes(*)')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return data || []
+}
+
+// ===== 活动系统 =====
+
+export async function getActivities(status = 'active') {
+  const { data, error } = await supabase
+    .from('activities')
+    .select('*')
+    .eq('status', status)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return data || []
+}
+
+export async function joinActivity(activityId: string, userId: string) {
+  const { data: existing } = await supabase
+    .from('activity_participants')
+    .select('id')
+    .eq('activity_id', activityId)
+    .eq('user_id', userId)
+    .single()
+
+  if (existing) throw new Error('已参与该活动')
+
+  const { data, error } = await supabase.from('activity_participants').insert({
+    activity_id: activityId,
+    user_id: userId,
+  }).select().single()
+
+  if (error) throw error
+
+  const { data: activity } = await supabase
+    .from('activities')
+    .select('current_participants')
+    .eq('id', activityId)
+    .single()
+
+  if (activity) {
+    await supabase
+      .from('activities')
+      .update({ current_participants: activity.current_participants + 1 })
+      .eq('id', activityId)
+  }
+
+  return data
+}
+
+export async function getUserActivities(userId: string) {
+  const { data, error } = await supabase
+    .from('activity_participants')
+    .select('*, activities(*)')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return data || []
+}
+
+// ===== 成就系统 =====
+
+export async function getUserAchievements(userId: string) {
+  const { data, error } = await supabase
+    .from('user_achievements')
+    .select('*')
+    .eq('user_id', userId)
+
+  if (error) throw error
+  return data || []
+}
+
+export async function unlockAchievement(userId: string, achievementId: string, rewardPoints: number) {
+  const { data: existing } = await supabase
+    .from('user_achievements')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('achievement_id', achievementId)
+    .single()
+
+  if (existing) return null // 已解锁
+
+  const { data, error } = await supabase.from('user_achievements').insert({
+    user_id: userId,
+    achievement_id: achievementId,
+    reward_claimed: false,
+  }).select().single()
+
+  if (error) throw error
+
+  // 给成就奖励积分
+  if (rewardPoints > 0) {
+    try {
+      await earnPoints(userId, rewardPoints, 'achievement', `成就解锁奖励`)
+    } catch {
+      // 积分获取失败不影响成就解锁
+    }
+  }
+
+  return data
 }
 
 // ===== 搜索 =====
