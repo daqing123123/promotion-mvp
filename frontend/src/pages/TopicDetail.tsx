@@ -160,12 +160,33 @@ export default function TopicDetail({ user }: { user?: any }) {
       }
 
       await supabase.from('topics').update({ promote_count: (topic.promote_count || 0) + 1 }).eq('id', topic.id)
+
+      // 如果是优惠券奖励，自动发券
+      if (isCoupon && topic.coupon_type) {
+        try {
+          await supabase.from('user_coupons').insert({
+            user_id: user.id,
+            topic_id: topic.id,
+            coupon_type: topic.coupon_type,
+            coupon_value: topic.coupon_value || '',
+            expire_at: new Date(Date.now() + (topic.coupon_expire_days || 30) * 86400000).toISOString(),
+          })
+          await supabase.from('topics').update({ coupon_claimed: (topic.coupon_claimed || 0) + 1 }).eq('id', topic.id)
+        } catch {}
+      }
+
       setPromoted(true)
       setMyPromote(data)
       setPromoteProgress(p => ({ ...p, accepted: p.accepted + 1 }))
       setShowAddressForm(false)
       checkAndUnlockAchievements(user.id).catch(() => {})
-      alert(isPhysical ? '已提交！等待商家发货' : `接受推广成功！+${topic.promote_reward || 20}积分`)
+      if (isCoupon) {
+        alert(`🎫 优惠券已领取！${topic.coupon_value || ''}\n在"我的优惠券"中查看`)
+      } else if (isPhysical) {
+        alert('已提交！等待商家发货')
+      } else {
+        alert(`接受推广成功！+${topic.promote_reward || 20}积分`)
+      }
     } catch (e: any) {
       alert(e.message || '接受推广失败')
     } finally {
@@ -218,6 +239,8 @@ export default function TopicDetail({ user }: { user?: any }) {
   const isBrand = topic.creator_type === 'brand' || !!topic.brand_name
   const isPhysical = topic.reward_type === 'physical' || topic.reward_type === 'both'
   const isPoints = topic.reward_type === 'points' || topic.reward_type === 'both' || !topic.reward_type
+  const isCoupon = topic.reward_type === 'coupon' || topic.coupon_type
+  const isCash = topic.reward_type === 'cash'
   const progressPercent = promoteProgress.target > 0 ? Math.min(100, Math.round(promoteProgress.accepted / promoteProgress.target * 100)) : 0
 
   return (
@@ -305,13 +328,25 @@ export default function TopicDetail({ user }: { user?: any }) {
                 <span>每次帮推 +{topic.promote_reward || 20} 积分</span>
               </div>
             )}
+            {isCash && (
+              <div className="flex items-center gap-2 text-sm text-gray-700">
+                <span>💵</span>
+                <span>{topic.reward_description || '现金奖励（详见话题说明）'}</span>
+              </div>
+            )}
+            {isCoupon && (
+              <div className="flex items-center gap-2 text-sm text-gray-700">
+                <span>🎫</span>
+                <span>{topic.coupon_value || '优惠券'} · 限{topic.coupon_count || 0}张 {topic.coupon_claimed >= topic.coupon_count ? '(已领完)' : `(${topic.coupon_claimed || 0}人已领)`}</span>
+              </div>
+            )}
             {isPhysical && (
               <div className="flex items-center gap-2 text-sm text-gray-700">
                 <span>📦</span>
                 <span>{topic.reward_description || '实物奖励（详见话题说明）'}</span>
               </div>
             )}
-            {!isPoints && !isPhysical && (
+            {!isPoints && !isPhysical && !isCoupon && !isCash && (
               <div className="text-sm text-gray-500">暂无奖励说明</div>
             )}
           </div>
@@ -437,7 +472,7 @@ export default function TopicDetail({ user }: { user?: any }) {
                 disabled={accepting}
                 className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold text-sm active:scale-[0.98] transition-transform"
               >
-                {accepting ? '接受中...' : isPhysical ? `🎯 接受任务 + 填地址 (+${topic.promote_reward || 20}积分)` : `🎯 接受推广任务 (+${topic.promote_reward || 20}积分)`}
+                {accepting ? '接受中...' : isCoupon ? `🎫 领取优惠券 (+${topic.promote_reward || 20}积分)` : isPhysical ? `🎯 接受任务 + 填地址 (+${topic.promote_reward || 20}积分)` : `🎯 接受推广任务 (+${topic.promote_reward || 20}积分)`}
               </button>
             )}
           </div>

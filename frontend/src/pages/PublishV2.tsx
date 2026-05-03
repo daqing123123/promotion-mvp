@@ -52,6 +52,8 @@ interface FormData {
   promoteTarget: string
   rewardType: string
   rewardDescription: string
+  couponValue: string
+  couponCount: string
   // 通用字段
   linkUrl: string
   price: string
@@ -64,7 +66,7 @@ export default function PublishV2({ user, setUser }: { user: any; isMobile?: boo
     title: '', description: '', content: '', tags: '', coverUrl: '', videoUrl: '', imageUrl: '',
     topicType: 'discussion', rewardPool: '', voteOptions: '', voteEndDate: '',
     brandName: '', brandLogo: '', brandDescription: '', promoteReward: '20', promoteTarget: '100',
-    rewardType: 'points', rewardDescription: '',
+    rewardType: 'points', rewardDescription: '', couponValue: '', couponCount: '',
     linkUrl: '', price: '',
   })
   const [loading, setLoading] = useState(false)
@@ -112,6 +114,9 @@ export default function PublishV2({ user, setUser }: { user: any; isMobile?: boo
           promote_count: 0,
           reward_type: form.rewardType,
           reward_description: form.rewardDescription.trim(),
+          coupon_type: form.rewardType === 'coupon' ? 'discount' : '',
+          coupon_value: form.couponValue || '',
+          coupon_count: parseInt(form.couponCount) || 0,
         }
 
         if (form.rewardPool && parseInt(form.rewardPool) > 0) {
@@ -322,6 +327,9 @@ export default function PublishV2({ user, setUser }: { user: any; isMobile?: boo
                       { key: 'points', label: '💰 纯积分' },
                       { key: 'physical', label: '📦 纯实物' },
                       { key: 'both', label: '🎁 积分+实物' },
+                      { key: 'cash', label: '💵 现金奖励' },
+                      { key: 'coupon', label: '🎫 优惠券' },
+                      { key: 'none', label: '❌ 无奖励' },
                     ].map(rt => (
                       <button key={rt.key} onClick={() => update('rewardType', rt.key)}
                         className={`p-2 rounded-xl text-xs text-center transition-all ${form.rewardType === rt.key ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 border border-gray-200'}`}>
@@ -334,6 +342,26 @@ export default function PublishV2({ user, setUser }: { user: any; isMobile?: boo
                   <input type="text" value={form.rewardDescription} onChange={e => update('rewardDescription', e.target.value)}
                     placeholder="实物奖励说明（如：限量耳机 x10）"
                     className="w-full px-4 py-3 bg-white rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-200" />
+                )}
+                {form.rewardType === 'cash' && (
+                  <input type="text" value={form.rewardDescription} onChange={e => update('rewardDescription', e.target.value)}
+                    placeholder="现金奖励说明（如：推广满100次奖¥50）"
+                    className="w-full px-4 py-3 bg-white rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-200" />
+                )}
+                {form.rewardType === 'coupon' && (
+                  <div className="space-y-2">
+                    <input type="text" value={form.rewardDescription} onChange={e => update('rewardDescription', e.target.value)}
+                      placeholder="优惠券说明（如：全场8折券）"
+                      className="w-full px-4 py-3 bg-white rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-200" />
+                    <div className="grid grid-cols-2 gap-2">
+                      <input type="text" value={form.couponValue} onChange={e => update('couponValue', e.target.value)}
+                        placeholder="券面值（如：8折、满100减20）"
+                        className="px-3 py-2.5 bg-white rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-200" />
+                      <input type="number" value={form.couponCount} onChange={e => update('couponCount', e.target.value)}
+                        placeholder="发放数量"
+                        className="px-3 py-2.5 bg-white rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-200" />
+                    </div>
+                  </div>
                 )}
               </div>
 

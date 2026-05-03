@@ -1,15 +1,23 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase/client'
+import { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { supabase, earnPoints } from '../lib/supabase/client'
 
 export default function Register({ setUser }: { setUser: any }) {
   const [username, setUsername] = useState('')
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
+  const [refCode, setRefCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const nav = useNavigate()
+  const [searchParams] = useSearchParams()
+
+  // 从 URL 读取邀请码
+  useEffect(() => {
+    const ref = searchParams.get('ref')
+    if (ref) setRefCode(ref.toUpperCase())
+  }, [searchParams])
 
   const handleRegister = async () => {
     if (!username || !name || !password) return
@@ -37,6 +45,41 @@ export default function Register({ setUser }: { setUser: any }) {
         })
         if (dbError) throw dbError
 
+        // 处理邀请码
+        if (refCode.trim()) {
+          try {
+            const { data: codeData } = await supabase
+              .from('referral_codes')
+              .select('*')
+              .eq('code', refCode.trim())
+              .single()
+
+            if (codeData) {
+              // 创建邀请记录
+              await supabase.from('referrals').insert({
+                referrer_id: codeData.user_id,
+                referred_id: data.user.id,
+                referral_code: refCode.trim(),
+                status: 'registered',
+                referrer_reward: 100,
+                referred_reward: 50,
+              })
+
+              // 给邀请人 +100 积分
+              try { await earnPoints(codeData.user_id, 100, 'invite', `邀请新用户 ${name}`) } catch {}
+              // 给被邀请人 +50 积分（加在注册的 100 之上）
+              try { await earnPoints(data.user.id, 50, 'invite', `使用邀请码注册`) } catch {}
+
+              // 更新邀请码使用次数
+              await supabase.from('referral_codes')
+                .update({ uses_count: (codeData.uses_count || 0) + 1 })
+                .eq('id', codeData.id)
+            }
+          } catch {
+            // 邀请码处理失败不影响注册
+          }
+        }
+
         setUser({
           id: data.user.id,
           name,
@@ -44,7 +87,7 @@ export default function Register({ setUser }: { setUser: any }) {
           avatar: '👤',
           bio: '',
           tags: [],
-          points: 100,
+          points: refCode.trim() ? 150 : 100, // 有邀请码多 50
           level: 1,
           followers: 0,
           following: 0,
@@ -74,12 +117,19 @@ export default function Register({ setUser }: { setUser: any }) {
           <input type="text" placeholder="昵称" value={name} onChange={e => setName(e.target.value)} className="w-full px-5 py-4 bg-gray-50 rounded-2xl text-base focus:outline-none focus:ring-2 focus:ring-gray-200" />
           <input type="password" placeholder="密码（至少6位）" value={password} onChange={e => setPassword(e.target.value)} className="w-full px-5 py-4 bg-gray-50 rounded-2xl text-base focus:outline-none focus:ring-2 focus:ring-gray-200" />
           <input type="password" placeholder="确认密码" value={confirm} onChange={e => setConfirm(e.target.value)} className="w-full px-5 py-4 bg-gray-50 rounded-2xl text-base focus:outline-none focus:ring-2 focus:ring-gray-200" />
+
+          {/* 邀请码（可选） */}
+          <div>
+            <input type="text" placeholder="邀请码（可选，多得50积分）" value={refCode} onChange={e => setRefCode(e.target.value.toUpperCase())} maxLength={6}
+              className="w-full px-5 py-4 bg-purple-50 rounded-2xl text-base font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-purple-200" />
+            {refCode && <p className="text-xs text-purple-500 mt-1 ml-2">✅ 使用邀请码注册，额外获得50积分！</p>}
+          </div>
         </div>
 
         {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-xl text-center">{error}</div>}
 
         <button onClick={handleRegister} disabled={loading || !username || !name || !password} className={`w-full py-4 rounded-2xl font-bold text-base transition-all ${loading || !username || !name || !password ? 'bg-gray-200 text-gray-400' : 'bg-black text-white active:scale-[0.98]'}`}>
-          {loading ? '注册中...' : '注册'}
+          {loading ? '注册中...' : refCode ? '注册 (+150积分)' : '注册 (+100积分)'}
         </button>
 
         <div className="text-center mt-6">

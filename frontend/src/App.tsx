@@ -20,6 +20,7 @@ const Tasks = lazy(() => import('./pages/Tasks'))
 const Activities = lazy(() => import('./pages/Activities'))
 const Points = lazy(() => import('./pages/Points'))
 const Achievements = lazy(() => import('./pages/Achievements'))
+const Invite = lazy(() => import('./pages/Invite'))
 
 function PageLoader() {
   return (
@@ -106,6 +107,7 @@ function AppLayout() {
             <Route path="/activities" element={user ? <Activities user={user} setUser={setUser} /> : <Login setUser={setUser} />} />
             <Route path="/points" element={user ? <Points user={user} /> : <Login setUser={setUser} />} />
             <Route path="/achievements" element={user ? <Achievements user={user} /> : <Login setUser={setUser} />} />
+            <Route path="/invite" element={user ? <Invite user={user} /> : <Login setUser={setUser} />} />
           </Routes>
         </Suspense>
       </div>
