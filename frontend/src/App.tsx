@@ -93,12 +93,12 @@ function AppLayout() {
             <Route path="/promote" element={<Promote user={user} setUser={setUser} isMobile={isMobile} />} />
             <Route path="/topics" element={<Topics />} />
             <Route path="/topic/:id" element={<TopicDetail />} />
-            <Route path="/content/:id" element={<ContentDetail />} />
+            <Route path="/content/:id" element={<ContentDetail user={user} />} />
             <Route path="/search" element={<Search />} />
             <Route path="/chat" element={user ? <ChatPage user={user} /> : <Login setUser={setUser} />} />
             <Route path="/login" element={<Login setUser={setUser} />} />
             <Route path="/register" element={<Register setUser={setUser} />} />
-            <Route path="/publish" element={user ? <PublishV2 user={user} isMobile={isMobile} /> : <Login setUser={setUser} />} />
+            <Route path="/publish" element={user ? <PublishV2 user={user} isMobile={isMobile} setUser={setUser} /> : <Login setUser={setUser} />} />
             <Route path="/profile" element={user ? <Profile user={user} setUser={setUser} /> : <Login setUser={setUser} />} />
             <Route path="/profile/:id" element={user ? <Profile user={user} setUser={setUser} /> : <Login setUser={setUser} />} />
             <Route path="/checkin" element={user ? <CheckIn user={user} setUser={setUser} /> : <Login setUser={setUser} />} />

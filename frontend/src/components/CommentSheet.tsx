@@ -1,7 +1,8 @@
 // ===== 评论底部弹窗 =====
 
 import { useState, useEffect, useRef } from 'react'
-import { supabase } from '../lib/supabase/client'
+import { supabase, addCommentWithPoints } from '../lib/supabase/client'
+import { checkAndUnlockAchievements } from '../lib/achievements'
 
 interface CommentSheetProps {
   contentId: string
@@ -61,31 +62,31 @@ export default function CommentSheet({ contentId, source, userId, onClose }: Com
     if (!newComment.trim() || submitting) return
     setSubmitting(true)
 
-    // 获取当前用户
+    // 获取当前用户 — 优先用 prop，否则用 auth
     let uid = userId
     if (!uid) {
-      const { data: users } = await supabase.from('users').select('id, name, avatar').limit(1)
-      uid = users?.[0]?.id
+      const { data: { user: authUser } } = await supabase.auth.getUser()
+      uid = authUser?.id
     }
-    if (!uid) { setSubmitting(false); return }
+    if (!uid) {
+      alert('请先登录')
+      setSubmitting(false)
+      return
+    }
 
     const { data: userInfo } = await supabase.from('users').select('name, avatar').eq('id', uid).single()
 
-    const { data: inserted, error } = await supabase.from('comments').insert({
-      user_id: uid,
-      target_type: source === 'memes' ? 'meme' : 'content',
-      target_id: contentId,
-      content: newComment.trim(),
-    }).select().single()
-
-    if (!error && inserted) {
-      // 立即显示新评论（不用重新加载）
+    try {
+      const inserted = await addCommentWithPoints(source === 'memes' ? 'meme' : 'content', contentId, newComment.trim())
       setComments([{
         ...inserted,
         user_name: userInfo?.name || '匿名用户',
         user_avatar: userInfo?.avatar || '👤',
       }, ...comments])
       setNewComment('')
+      if (uid) checkAndUnlockAchievements(uid).catch(() => {})
+    } catch (e: any) {
+      alert(e.message || '评论失败')
     }
     setSubmitting(false)
   }

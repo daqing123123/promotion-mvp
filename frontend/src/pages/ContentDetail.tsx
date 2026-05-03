@@ -1,10 +1,11 @@
-// ===== 内容详情页 — 真实数据版 =====
+// ===== 内容详情页 — 完整交互版 =====
 
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { supabase } from '../lib/supabase/client'
+import { supabase, toggleLikeWithPoints, toggleFavorite, promoteContent, addCommentWithPoints } from '../lib/supabase/client'
+import { checkAndUnlockAchievements } from '../lib/achievements'
 
-export default function ContentDetail() {
+export default function ContentDetail({ user }: { user?: any }) {
   const navigate = useNavigate()
   const { id } = useParams()
   const [content, setContent] = useState<any>(null)
@@ -12,6 +13,8 @@ export default function ContentDetail() {
   const [newComment, setNewComment] = useState('')
   const [liked, setLiked] = useState(false)
   const [favorited, setFavorited] = useState(false)
+  const [promoted, setPromoted] = useState(false)
+  const [promoting, setPromoting] = useState(false)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
 
@@ -35,7 +38,8 @@ export default function ContentDetail() {
 
     if (data) {
       setContent({ ...data, _source: source })
-      // 加载评论（关联用户信息）
+
+      // 加载评论
       const { data: cmts } = await supabase
         .from('comments')
         .select('*')
@@ -44,7 +48,7 @@ export default function ContentDetail() {
         .order('created_at', { ascending: false })
         .limit(50)
 
-      // 获取评论者的用户信息
+      // 获取评论者信息
       const userIds = [...new Set((cmts || []).map(c => c.user_id).filter(Boolean))]
       let usersMap: Record<string, any> = {}
       if (userIds.length > 0) {
@@ -58,40 +62,94 @@ export default function ContentDetail() {
         user_avatar: usersMap[c.user_id]?.avatar || '👤',
       }))
       setComments(commentsWithUser)
+
+      // 检查当前用户的互动状态
+      if (user?.id) {
+        const targetType = source === 'memes' ? 'meme' : 'content'
+        const [likeRes, favRes, promoteRes] = await Promise.all([
+          supabase.from('interactions').select('id').eq('user_id', user.id).eq('target_type', targetType).eq('target_id', data.id).eq('action', 'like').maybeSingle(),
+          supabase.from('interactions').select('id').eq('user_id', user.id).eq('target_type', targetType).eq('target_id', data.id).eq('action', 'favorite').maybeSingle(),
+          supabase.from('promotes').select('id').eq('user_id', user.id).eq('content_id', data.id).maybeSingle(),
+        ])
+        if (likeRes.data) setLiked(true)
+        if (favRes.data) setFavorited(true)
+        if (promoteRes.data) setPromoted(true)
+      }
     }
     setLoading(false)
   }
 
   const handleLike = async () => {
-    if (!content) return
-    setLiked(!liked)
-    const table = content._source === 'memes' ? 'memes' : 'contents'
-    const field = content._source === 'memes' ? 'like_count' : 'like_count'
-    await supabase.from(table).update({ [field]: (content.like_count || 0) + (liked ? -1 : 1) }).eq('id', content.id)
-    setContent({ ...content, [field]: (content.like_count || 0) + (liked ? -1 : 1) })
+    if (!user?.id) return alert('请先登录')
+    const targetType = content._source === 'memes' ? 'meme' : 'content'
+    const prev = liked
+    setLiked(!prev)
+    try {
+      await toggleLikeWithPoints(targetType, content.id)
+      setContent((c: any) => ({ ...c, like_count: (c.like_count || 0) + (prev ? -1 : 1) }))
+      checkAndUnlockAchievements(user.id).catch(() => {})
+    } catch {
+      setLiked(prev)
+    }
+  }
+
+  const handleFavorite = async () => {
+    if (!user?.id) return alert('请先登录')
+    const targetType = content._source === 'memes' ? 'meme' : 'content'
+    const prev = favorited
+    setFavorited(!prev)
+    try {
+      await toggleFavorite(targetType, content.id)
+    } catch {
+      setFavorited(prev)
+    }
+  }
+
+  const handlePromote = async () => {
+    if (!user?.id) return alert('请先登录')
+    if (promoted || promoting) return
+    setPromoting(true)
+    try {
+      await promoteContent(user.id, content.id)
+      setPromoted(true)
+      setContent((c: any) => ({ ...c, promote_count: (c.promote_count || 0) + 1 }))
+      checkAndUnlockAchievements(user.id).catch(() => {})
+    } catch (e: any) {
+      if (e.message === '已经帮推过该内容') {
+        setPromoted(true)
+      } else {
+        alert(e.message || '帮推失败')
+      }
+    } finally {
+      setPromoting(false)
+    }
   }
 
   const handleComment = async () => {
     if (!newComment.trim() || !content) return
+    if (!user?.id) return alert('请先登录')
     setSubmitting(true)
 
-    // 获取当前用户（简化：用第一个用户）
-    const { data: users } = await supabase.from('users').select('id, name, avatar').limit(1)
-    const user = users?.[0]
-    if (!user) { setSubmitting(false); return }
+    try {
+      const targetType = content._source === 'memes' ? 'meme' : 'content'
+      const inserted = await addCommentWithPoints(targetType, content.id, newComment.trim())
 
-    const { data: inserted, error } = await supabase.from('comments').insert({
-      user_id: user.id,
-      target_type: content._source === 'memes' ? 'meme' : 'content',
-      target_id: content.id,
-      content: newComment.trim(),
-    }).select().single()
+      // 获取用户信息
+      const { data: userInfo } = await supabase.from('users').select('name, avatar').eq('id', user.id).single()
 
-    if (!error && inserted) {
-      setComments([{ ...inserted, user_name: user.name, user_avatar: user.avatar }, ...comments])
+      setComments([{
+        ...inserted,
+        user_name: userInfo?.name || '匿名用户',
+        user_avatar: userInfo?.avatar || '👤',
+      }, ...comments])
       setNewComment('')
+      setContent((c: any) => ({ ...c, comment_count: (c.comment_count || 0) + 1 }))
+      checkAndUnlockAchievements(user.id).catch(() => {})
+    } catch (e: any) {
+      alert(e.message || '评论失败')
+    } finally {
+      setSubmitting(false)
     }
-    setSubmitting(false)
   }
 
   if (loading) {
@@ -161,7 +219,7 @@ export default function ContentDetail() {
             <span className="text-sm text-gray-600">{content.view_count || 0} 浏览</span>
           </button>
         </div>
-        <button onClick={() => setFavorited(!favorited)} className="text-xl">
+        <button onClick={handleFavorite} className="text-xl">
           {favorited ? '⭐' : '☆'}
         </button>
       </div>
@@ -184,8 +242,16 @@ export default function ContentDetail() {
 
       {/* 帮推按钮 */}
       <div className="px-5 py-4">
-        <button className="w-full py-3.5 bg-black text-white rounded-2xl font-bold text-base active:scale-[0.98] transition-transform">
-          🔥 帮推这条内容 (+20积分)
+        <button
+          onClick={handlePromote}
+          disabled={promoted || promoting}
+          className={`w-full py-3.5 rounded-2xl font-bold text-base active:scale-[0.98] transition-transform ${
+            promoted
+              ? 'bg-gray-200 text-gray-500'
+              : 'bg-black text-white'
+          }`}
+        >
+          {promoted ? '✅ 已帮推' : promoting ? '帮推中...' : '🔥 帮推这条内容 (+20积分)'}
         </button>
       </div>
 
@@ -210,7 +276,7 @@ export default function ContentDetail() {
                 newComment.trim() ? 'bg-black text-white' : 'bg-gray-200 text-gray-400'
               }`}
             >
-              {submitting ? '发送中...' : '发表'}
+              {submitting ? '发送中...' : '发表 (+5积分)'}
             </button>
           </div>
         </div>

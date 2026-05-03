@@ -1,8 +1,9 @@
-// ===== 推广广场 =====
+// ===== 推广广场 — 真实数据版 =====
 
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { MOCK_USER, getLevelTitle, getLevelBadge, getLevelColor, SPEND_ACTIONS } from '../lib/rewardSystem'
+import { useState, useEffect } from 'react'
+import { supabase, getPromoteHistory, promoteContent } from '../lib/supabase/client'
+import { getLevelTitle, getLevelBadge, getLevelColor, SPEND_ACTIONS } from '../lib/rewardSystem'
+import { checkAndUnlockAchievements } from '../lib/achievements'
 import PointsCenter from '../components/PointsCenter'
 
 interface PromoteProps {
@@ -11,12 +12,103 @@ interface PromoteProps {
   isMobile: boolean
 }
 
-export default function Promote({ user, setUser: _setUser, isMobile: _isMobile }: PromoteProps) {
-  useNavigate() // keep hook used
+export default function Promote({ user, setUser, isMobile: _isMobile }: PromoteProps) {
   const [showPoints, setShowPoints] = useState(false)
   const [filter, setFilter] = useState<'all' | 'hot' | 'new' | 'ending'>('all')
+  const [promotableItems, setPromotableItems] = useState<any[]>([])
+  const [myPromotes, setMyPromotes] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [promotingId, setPromotingId] = useState<string | null>(null)
 
-  const userData = user || MOCK_USER
+  const userData = user || { level: 1, points: 0 }
+
+  useEffect(() => {
+    if (user?.id) {
+      loadData()
+    } else {
+      loadPublicData()
+    }
+  }, [user?.id])
+
+  const loadPublicData = async () => {
+    setLoading(true)
+    // 加载可帮推的内容（热门内容）
+    const { data: contents } = await supabase
+      .from('contents')
+      .select('id, type, title, description, cover_url, like_count, view_count, promote_count, comment_count, creator_id')
+      .eq('status', 'published')
+      .order('like_count', { ascending: false })
+      .limit(20)
+
+    const { data: memes } = await supabase
+      .from('memes')
+      .select('id, title, content, like_count, view_count, share_count, creator_name, creator_avatar')
+      .eq('status', 'published')
+      .order('hot_score', { ascending: false })
+      .limit(20)
+
+    const items = [
+      ...(contents || []).map(c => ({ ...c, _source: 'contents' })),
+      ...(memes || []).map(m => ({ ...m, _source: 'memes', type: 'meme' })),
+    ].sort(() => Math.random() - 0.5)
+
+    setPromotableItems(items)
+    setLoading(false)
+  }
+
+  const loadData = async () => {
+    setLoading(true)
+    await Promise.all([loadPublicData(), loadMyPromotes()])
+    setLoading(false)
+  }
+
+  const loadMyPromotes = async () => {
+    if (!user?.id) return
+    try {
+      const history = await getPromoteHistory(user.id, 20)
+      setMyPromotes(history)
+    } catch {
+      // ignore
+    }
+  }
+
+  const handlePromote = async (itemId: string, source: string) => {
+    if (!user?.id) return alert('请先登录')
+    setPromotingId(itemId)
+    try {
+      // 帮推只支持 contents 表（promotes 外键关联 contents）
+      if (source !== 'contents') {
+        alert('目前只支持帮推正式内容')
+        return
+      }
+      const result = await promoteContent(user.id, itemId)
+      // 更新本地状态
+      setPromotableItems(prev => prev.map(item =>
+        item.id === itemId
+          ? { ...item, promote_count: (item.promote_count || 0) + 1 }
+          : item
+      ))
+      // 更新用户积分
+      if (setUser && result.points) {
+        setUser((prev: any) => prev ? { ...prev, points: result.points.points, level: result.points.level } : prev)
+      }
+      checkAndUnlockAchievements(user.id).catch(() => {})
+      alert('帮推成功！+20积分')
+    } catch (e: any) {
+      alert(e.message || '帮推失败')
+    } finally {
+      setPromotingId(null)
+    }
+  }
+
+  // 筛选逻辑
+  const filteredItems = promotableItems.filter(item => {
+    if (filter === 'all') return true
+    if (filter === 'hot') return (item.like_count || 0) > 100
+    if (filter === 'new') return true // 按最新排序已经是默认
+    if (filter === 'ending') return false // 暂无截止概念
+    return true
+  })
 
   return (
     <div className="bg-gray-50 min-h-screen pb-20">
@@ -76,33 +168,78 @@ export default function Promote({ user, setUser: _setUser, isMobile: _isMobile }
         </div>
       </div>
 
+      {/* 我的帮推记录 */}
+      {user?.id && myPromotes.length > 0 && (
+        <div className="px-5 pt-4">
+          <h2 className="text-sm font-bold text-gray-900 mb-3">📊 我的帮推 ({myPromotes.length})</h2>
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2">
+            {myPromotes.slice(0, 5).map((p: any) => (
+              <div key={p.id} className="shrink-0 bg-white rounded-xl p-3 border border-gray-100 min-w-[140px]">
+                <div className="text-xs text-gray-400 mb-1">{p.contents?.type || '内容'}</div>
+                <div className="text-sm font-medium text-gray-900 truncate">{p.contents?.title || '已帮推内容'}</div>
+                <div className="text-xs text-green-600 mt-1">+{p.points_earned} 积分</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 推广列表 */}
       <div className="p-5 space-y-3">
-        {[
-          { id: 'p1', title: '街头歌手老张', type: '人物', views: '23万', likes: '1.2万', status: 'hot' },
-          { id: 'p2', title: '国产平替耳机', type: '产品', views: '5.6万', likes: '4500', status: 'active' },
-          { id: 'p3', title: '10元挑战', type: '挑战', views: '8.9万', likes: '6000', status: 'active' },
-          { id: 'p4', title: '独立音乐推荐', type: '音乐', views: '3.2万', likes: '2800', status: 'new' },
-          { id: 'p5', title: '古装剧讨论', type: '影视', views: '12万', likes: '8000', status: 'hot' },
-        ].map(promo => (
-          <div key={promo.id} className="bg-white rounded-2xl p-4 border border-gray-100">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="px-2 py-0.5 text-[10px] rounded-full bg-gray-100 text-gray-600">
-                {promo.type}
-              </span>
-              {promo.status === 'hot' && (
-                <span className="px-2 py-0.5 text-[10px] rounded-full bg-red-100 text-red-600">
-                  🔥 热门
-                </span>
-              )}
-            </div>
-            <h3 className="text-base font-bold text-gray-900 mb-2">{promo.title}</h3>
-            <div className="flex items-center gap-4 text-xs text-gray-400">
-              <span>👁 {promo.views}</span>
-              <span>❤️ {promo.likes}</span>
-            </div>
+        {loading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="bg-white rounded-2xl p-4 animate-pulse">
+                <div className="h-4 w-16 bg-gray-100 rounded mb-2" />
+                <div className="h-5 w-3/4 bg-gray-100 rounded mb-2" />
+                <div className="h-3 w-1/2 bg-gray-100 rounded" />
+              </div>
+            ))}
           </div>
-        ))}
+        ) : filteredItems.length === 0 ? (
+          <div className="text-center py-10 text-gray-400 text-sm">暂无可帮推的内容</div>
+        ) : (
+          filteredItems.map(item => {
+            const isMeme = item._source === 'memes'
+            const title = isMeme ? (item.title || item.content?.substring(0, 30)) : item.title
+            const description = isMeme ? item.content : item.description
+
+            return (
+              <div key={item.id} className="bg-white rounded-2xl p-4 border border-gray-100">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="px-2 py-0.5 text-[10px] rounded-full bg-gray-100 text-gray-600">
+                    {isMeme ? '📝 段子' : item.type}
+                  </span>
+                  {(item.like_count || 0) > 100 && (
+                    <span className="px-2 py-0.5 text-[10px] rounded-full bg-red-100 text-red-600">
+                      🔥 热门
+                    </span>
+                  )}
+                </div>
+                <h3 className="text-base font-bold text-gray-900 mb-1 line-clamp-2">{title}</h3>
+                {description && (
+                  <p className="text-xs text-gray-500 mb-3 line-clamp-2">{description}</p>
+                )}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4 text-xs text-gray-400">
+                    <span>👁 {item.view_count || 0}</span>
+                    <span>❤️ {item.like_count || 0}</span>
+                    <span>🔥 {item.promote_count || item.share_count || 0} 帮推</span>
+                  </div>
+                  {!isMeme && (
+                    <button
+                      onClick={() => handlePromote(item.id, item._source)}
+                      disabled={promotingId === item.id}
+                      className="px-4 py-1.5 bg-black text-white text-xs rounded-full active:scale-[0.95] transition-transform"
+                    >
+                      {promotingId === item.id ? '...' : '帮推'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })
+        )}
       </div>
 
       {/* 积分中心弹窗 */}
