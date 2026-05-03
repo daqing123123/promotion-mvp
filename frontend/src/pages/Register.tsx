@@ -1,16 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { supabase, earnPoints, unlockAchievement } from '../lib/supabase/client'
-import { toast } from '../lib/toast'
+import { supabase } from '../lib/supabase/client'
 
-// 随机昵称
-const ADJECTIVES = ['快乐的', '勇敢的', '聪明的', '幸运的', '可爱的', '酷酷的', '神秘的', '闪亮的', '温柔的', '无敌的', '潇洒的', '呆萌的', '霸气的', '暖心的', '搞笑的']
-const ANIMALS = ['小海豚', '小鲸鱼', '小海鸥', '小章鱼', '小水母', '小海星', '小螃蟹', '小鲨鱼', '小海马', '小贝壳', '小浪花', '小帆船', '小灯塔', '小企鹅', '小北极熊']
-function randomNickname() {
-  return ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)] + ANIMALS[Math.floor(Math.random() * ANIMALS.length)] + (Math.floor(Math.random() * 999) + 1)
-}
+// 随机昵称（由数据库触发器生成）
 
-export default function Register({ setUser }: { setUser: any }) {
+export default function Register() {
   const [email, setEmail] = useState('')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -59,27 +53,38 @@ export default function Register({ setUser }: { setUser: any }) {
     setError('')
 
     try {
-      // 注册（Supabase 会自动发验证邮件）
+      // 注册（Supabase 会自动发验证邮件，触发器自动创建用户记录）
       const { data, error: authError } = await supabase.auth.signUp({
         email: email.toLowerCase(),
         password,
         options: {
           data: {
             username: username.toLowerCase(),
-            nickname: randomNickname(),
           }
         }
       })
       if (authError) throw authError
 
-      // 如果需要邮箱验证，session 为 null
-      if (!data.session) {
-        setEmailSent(true)
-        return
+      // 邀请码记录（如果有的话）
+      if (refCode.trim()) {
+        try {
+          const { data: codeData } = await supabase.from('referral_codes').select('*').eq('code', refCode.trim()).maybeSingle()
+          if (codeData) {
+            // 记录邀请关系，等用户验证邮箱后再结算奖励
+            await supabase.from('referrals').insert({
+              referrer_id: codeData.user_id,
+              referred_id: data.user!.id,
+              referral_code: refCode.trim(),
+              status: 'pending',
+              referrer_reward: 100,
+              referred_reward: 50,
+            })
+          }
+        } catch {}
       }
 
-      // 如果自动确认了（不应发生，但兼容处理）
-      await finishRegistration(data.user!.id, randomNickname())
+      // 无论是否需要邮箱验证，都显示验证提示
+      setEmailSent(true)
     } catch (err: any) {
       const msg = err.message || ''
       if (msg.includes('already registered') || msg.includes('User already registered')) setError('该邮箱已注册')
@@ -89,72 +94,6 @@ export default function Register({ setUser }: { setUser: any }) {
     } finally {
       setLoading(false)
     }
-  }
-
-  const finishRegistration = async (userId: string, nickname: string) => {
-    // 创建用户记录
-    const { error: dbError } = await supabase.from('users').insert({
-      id: userId,
-      username: username.toLowerCase(),
-      email: email.toLowerCase(),
-      name: nickname,
-      avatar: '👤',
-      bio: '',
-      tags: [],
-      points: 100,
-      level: 1,
-    })
-    if (dbError) throw dbError
-
-    // 种子用户成就
-    let bonusPoints = 0
-    const { count } = await supabase.from('users').select('*', { count: 'exact', head: true })
-    if ((count || 0) < 10000) {
-      try {
-        await unlockAchievement(userId, 'seed-user', 200)
-        bonusPoints += 200
-      } catch {}
-    }
-
-    // 邀请码
-    if (refCode.trim()) {
-      try {
-        const { data: codeData } = await supabase.from('referral_codes').select('*').eq('code', refCode.trim()).maybeSingle()
-        if (codeData) {
-          await supabase.from('referrals').insert({
-            referrer_id: codeData.user_id,
-            referred_id: userId,
-            referral_code: refCode.trim(),
-            status: 'registered',
-            referrer_reward: 100,
-            referred_reward: 50,
-          })
-          try { await earnPoints(codeData.user_id, 100, 'invite', `邀请新用户 ${nickname}`) } catch {}
-          try { await earnPoints(userId, 50, 'invite', '使用邀请码注册') } catch {}
-          await supabase.from('referral_codes').update({ uses_count: (codeData.uses_count || 0) + 1 }).eq('id', codeData.id)
-          bonusPoints += 50
-        }
-      } catch {}
-    }
-
-    const finalPoints = 100 + bonusPoints
-    toast.success('注册成功！欢迎加入巨浪 🌊')
-    const { count: c } = await supabase.from('users').select('*', { count: 'exact', head: true })
-    if ((c || 0) < 10000) toast.info('🎁 恭喜成为种子用户！+200积分')
-
-    setUser({
-      id: userId,
-      name: nickname,
-      username: username.toLowerCase(),
-      avatar: '👤',
-      bio: '',
-      tags: [],
-      points: finalPoints,
-      level: 1,
-      followers: 0,
-      following: 0,
-    })
-    nav('/')
   }
 
   // 邮箱验证完成页面
