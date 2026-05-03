@@ -29,7 +29,7 @@ export function makeContent(type?: ContentType): Content {
     description: '用镜头讲述故事，记录城市的另一面',
     cover: randomPick(COVERS),
     creator: randomPick(CREATORS),
-    stats: { views: randomInt(100, 100000), likes: randomInt(10, 10000), comments: randomInt(5, 5000), shares: randomInt(1, 2000), favorites: randomInt(10, 8000) },
+    stats: { views: randomInt(100, 100000), likes: randomInt(10, 10000), comments: randomInt(5, 5000), shares: randomInt(1, 2000), favorites: randomInt(10, 8000), promotes: randomInt(0, 500) },
     tags: ['生活', '记录', '城市'],
     createdAt: Date.now() - randomInt(0, 7 * 86400000),
     renderConfig: { mode: t === 'video' ? 'player' : t === 'software' ? 'installable' : 'card' },

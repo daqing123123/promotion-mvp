@@ -10,7 +10,7 @@ export interface Content {
   cover: string
   url?: string
   creator: { id: string; name: string; avatar: string; level: number }
-  stats: { views: number; likes: number; comments: number; shares: number; favorites: number }
+  stats: { views: number; likes: number; comments: number; shares: number; favorites: number; promotes: number }
   tags: string[]
   createdAt: number
   renderConfig: { mode: 'card' | 'player' | 'reader' | 'embed' | 'trailer' | 'installable'; detail?: any }

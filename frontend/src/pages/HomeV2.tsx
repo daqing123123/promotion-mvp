@@ -1,4 +1,4 @@
-// ===== 首页 - 全屏内容 Feed =====
+// ===== 首页 - 全屏内容 Feed（含活动） =====
 
 import { useState, useEffect, useCallback } from 'react'
 import FeedContainer from '../components/FeedContainer'
@@ -8,21 +8,18 @@ import type { Content } from '../lib/contentData'
 
 const CACHE_KEY = 'julang_feed_cache'
 const CACHE_TIME_KEY = 'julang_feed_time'
-const CACHE_MAX = 80 // 缓存最多 80 条
+const CACHE_MAX = 80
 
-// 从 localStorage 读缓存
 function getCachedFeed(): Content[] | null {
   try {
     const cached = localStorage.getItem(CACHE_KEY)
     const time = localStorage.getItem(CACHE_TIME_KEY)
     if (!cached || !time) return null
-    // 缓存 30 分钟有效
     if (Date.now() - Number(time) > 30 * 60 * 1000) return null
     return JSON.parse(cached)
   } catch { return null }
 }
 
-// 写缓存
 function setCachedFeed(items: Content[]) {
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify(items.slice(0, CACHE_MAX)))
@@ -46,15 +43,12 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
   const [hasMore, setHasMore] = useState(true)
 
   useEffect(() => {
-    // 1. 先显示缓存（0ms 延迟）
     const cached = getCachedFeed()
     if (cached && cached.length > 0) {
       setContents(cached)
       setLoading(false)
-      // 2. 后台静默刷新（不显示 loading）
       fetchContents(false, true)
     } else {
-      // 没缓存，正常 loading
       fetchContents()
     }
   }, [])
@@ -66,21 +60,38 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
     const currentMemeOffset = isLoadMore ? memeOffset : 0
     const currentContentOffset = isLoadMore ? contentOffset : 0
 
-    const [contentsRes, memesRes] = await Promise.all([
-      supabase.from('contents').select('id, type, title, description, cover_url, tags, creator_id, render_mode, render_src, render_config, view_count, like_count, promote_count, share_count, comment_count, favorite_count, created_at').eq('status', 'published').order('created_at', { ascending: false }).range(currentContentOffset, currentContentOffset + 14),
-      supabase.from('memes').select('id, title, content, image_url, hashtags, creator_id, creator_name, creator_avatar, like_count, view_count, share_count, created_at').eq('status', 'published').order('hot_score', { ascending: false }).range(currentMemeOffset, currentMemeOffset + 19),
+    // 三个数据源并行：contents + memes + activities
+    const [contentsRes, memesRes, activitiesRes] = await Promise.all([
+      supabase.from('contents')
+        .select('id, type, title, description, cover_url, tags, creator_id, render_mode, render_src, render_config, view_count, like_count, promote_count, share_count, comment_count, favorite_count, created_at')
+        .eq('status', 'published')
+        .order('created_at', { ascending: false })
+        .range(currentContentOffset, currentContentOffset + 14),
+      supabase.from('memes')
+        .select('id, title, content, image_url, hashtags, creator_id, creator_name, creator_avatar, like_count, view_count, share_count, created_at')
+        .eq('status', 'published')
+        .order('hot_score', { ascending: false })
+        .range(currentMemeOffset, currentMemeOffset + 19),
+      // 活动只在首页加载时获取（不分页）
+      isLoadMore ? { data: [] } : supabase.from('activities')
+        .select('id, type, title, description, reward, participant_count, end_date, status, created_at')
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(5),
     ])
 
     const newContents = contentsRes.data || []
     const newMemes = memesRes.data || []
+    const newActivities = activitiesRes.data || []
 
-    if (newContents.length === 0 && newMemes.length === 0) {
+    if (newContents.length === 0 && newMemes.length === 0 && newActivities.length === 0) {
       setHasMore(false)
       if (!silent) setLoading(false)
       setLoadingMore(false)
       return
     }
 
+    // 获取 contents 的创作者信息
     const contentCreatorIds = [...new Set(newContents.map(c => c.creator_id).filter(Boolean))]
     let usersMap: Record<string, any> = {}
     if (contentCreatorIds.length > 0) {
@@ -88,6 +99,7 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
       if (usersData) usersMap = Object.fromEntries(usersData.map(u => [u.id, u]))
     }
 
+    // 转换 contents
     const contentItems: Content[] = newContents.map(item => {
       const u = usersMap[item.creator_id] || {}
       return {
@@ -101,6 +113,7 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
       }
     })
 
+    // 转换 memes
     const memeItems: Content[] = newMemes.map(item => {
       const u = usersMap[item.creator_id] || {}
       return {
@@ -114,7 +127,28 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
       }
     })
 
-    const newItems = [...contentItems, ...memeItems].sort(() => Math.random() - 0.5)
+    // 转换 activities → Content 格式
+    const activityItems: Content[] = newActivities.map(item => ({
+      id: item.id,
+      type: 'content' as const,
+      title: `🎯 ${item.title}`,
+      description: `${item.description}${item.reward ? `\n\n🎁 奖励：${item.reward}积分` : ''}${item.end_date ? `\n⏰ 截止：${new Date(item.end_date).toLocaleDateString('zh-CN')}` : ''}${item.participant_count ? `\n👥 ${item.participant_count}人已参与` : ''}`,
+      cover: '/placeholder-1.svg',
+      tags: ['活动', item.type],
+      creator: { id: '', name: '巨浪官方', avatar: '🌊', level: 99 },
+      stats: { views: 0, likes: 0, comments: 0, shares: 0, favorites: 0, promotes: 0 },
+      renderConfig: { mode: 'card' as const, src: '', detail: { isActivity: true, activityId: item.id, reward: item.reward } },
+      interactionConfig: { canLike: true, canComment: true, canShare: true, canFavorite: false, canPromote: false, canRemix: false },
+      createdAt: item.created_at,
+    }))
+
+    // 合并并随机打散
+    const allNew = [...contentItems, ...memeItems]
+    // 活动插到前面（优先展示）
+    if (activityItems.length > 0 && !isLoadMore) {
+      allNew.splice(Math.min(2, allNew.length), 0, ...activityItems)
+    }
+    const newItems = allNew.sort(() => Math.random() - 0.5)
 
     if (isLoadMore) {
       setContents(prev => [...prev, ...newItems])
@@ -124,7 +158,6 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
       setContents(newItems)
       setMemeOffset(newMemes.length)
       setContentOffset(newContents.length)
-      // 写入缓存
       setCachedFeed(newItems)
     }
 
@@ -137,7 +170,6 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
     if (!loadingMore && hasMore) fetchContents(true)
   }, [loadingMore, hasMore, memeOffset, contentOffset])
 
-  // 骨架屏只在没有缓存时显示
   if (loading && contents.length === 0) {
     return (
       <div className="w-full h-screen bg-black">
