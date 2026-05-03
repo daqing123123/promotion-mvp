@@ -180,6 +180,17 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     check: s => s.tasksCompleted >= 1,
     getProgress: s => ({ current: Math.min(s.tasksCompleted, 1), max: 1 }),
   },
+  {
+    id: 'seed-user',
+    name: '种子用户',
+    icon: '🌱',
+    desc: '前10000名注册用户',
+    category: 'special',
+    condition: '前10000名注册',
+    rewardPoints: 200,
+    check: () => false, // 注册时自动授予，不在 check 中检测
+    getProgress: () => ({ current: 1, max: 1 }),
+  },
 ]
 
 /**

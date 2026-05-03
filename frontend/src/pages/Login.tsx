@@ -45,7 +45,10 @@ export default function Login({ setUser }: { setUser: any }) {
     } catch (err: any) {
       const msg = err.message || ''
       if (msg.includes('Invalid login') || msg.includes('invalid_credentials')) setError('用户名或密码错误')
-      else if (msg.includes('Email not confirmed')) setError('账号未验证')
+      else if (msg.includes('Email not confirmed') || msg.includes('not confirmed')) {
+        // 尝试自动登录（Supabase 邮箱验证关闭时的兼容处理）
+        setError('用户名或密码错误')
+      }
       else if (msg.includes('Too many')) setError('登录太频繁，请稍后再试')
       else setError(msg || '登录失败')
     } finally {

@@ -6,27 +6,6 @@ import MemeModal from '../components/MemeModal'
 import { supabase } from '../lib/supabase/client'
 import type { Content } from '../lib/contentData'
 
-const CACHE_KEY = 'julang_feed_cache'
-const CACHE_TIME_KEY = 'julang_feed_time'
-const CACHE_MAX = 80
-
-function getCachedFeed(): Content[] | null {
-  try {
-    const cached = localStorage.getItem(CACHE_KEY)
-    const time = localStorage.getItem(CACHE_TIME_KEY)
-    if (!cached || !time) return null
-    if (Date.now() - Number(time) > 30 * 60 * 1000) return null
-    return JSON.parse(cached)
-  } catch { return null }
-}
-
-function setCachedFeed(items: Content[]) {
-  try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(items.slice(0, CACHE_MAX)))
-    localStorage.setItem(CACHE_TIME_KEY, String(Date.now()))
-  } catch {}
-}
-
 interface HomeV2Props {
   user: any
   setUser: (user: any) => void
@@ -43,14 +22,7 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
   const [hasMore, setHasMore] = useState(true)
 
   useEffect(() => {
-    const cached = getCachedFeed()
-    if (cached && cached.length > 0) {
-      setContents(cached)
-      setLoading(false)
-      fetchContents(false, true)
-    } else {
-      fetchContents()
-    }
+    fetchContents()
   }, [])
 
   const fetchContents = async (isLoadMore = false, silent = false) => {
@@ -63,21 +35,21 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
     // 三个数据源并行：contents + memes + activities
     const [contentsRes, memesRes, activitiesRes] = await Promise.all([
       supabase.from('contents')
-        .select('id, type, title, description, cover_url, tags, creator_id, render_mode, render_src, render_config, view_count, like_count, promote_count, share_count, comment_count, favorite_count, created_at')
+        .select('id, type, title, description, cover_url, tags, creator_id, render_mode, view_count, like_count, promote_count, share_count, comment_count, favorite_count, created_at')
         .eq('status', 'published')
         .order('created_at', { ascending: false })
-        .range(currentContentOffset, currentContentOffset + 14),
+        .range(currentContentOffset, currentContentOffset + 9),
       supabase.from('memes')
         .select('id, title, content, image_url, hashtags, creator_id, creator_name, creator_avatar, like_count, view_count, share_count, created_at')
         .eq('status', 'published')
         .order('hot_score', { ascending: false })
-        .range(currentMemeOffset, currentMemeOffset + 19),
+        .range(currentMemeOffset, currentMemeOffset + 9),
       // 活动只在首页加载时获取（不分页）
       isLoadMore ? { data: [] } : supabase.from('activities')
         .select('id, type, title, description, reward, participant_count, end_date, status, created_at')
         .eq('status', 'active')
         .order('created_at', { ascending: false })
-        .limit(5),
+        .limit(3),
     ])
 
     const newContents = contentsRes.data || []
@@ -121,7 +93,7 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
         _source: 'contents' as const,
         creator: { id: item.creator_id || '', name: u.name || '用户', avatar: u.avatar || '👤', level: u.level || 1 },
         stats: { views: item.view_count || 0, likes: item.like_count || 0, comments: item.comment_count || 0, shares: item.share_count || 0, favorites: item.favorite_count || 0, promotes: item.promote_count || 0 },
-        renderConfig: { mode: (item.render_mode as any) || 'card', src: item.render_src || '', detail: item.render_config || {} },
+        renderConfig: { mode: (item.render_mode as any) || 'card', src: '', detail: {} },
         interactionConfig: { canLike: true, canComment: true, canShare: true, canFavorite: true, canPromote: true, canRemix: true },
         createdAt: item.created_at,
       }
@@ -173,7 +145,6 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
       setContents(newItems)
       setMemeOffset(newMemes.length)
       setContentOffset(newContents.length)
-      setCachedFeed(newItems)
     }
 
     if (newItems.length < 10) setHasMore(false)
