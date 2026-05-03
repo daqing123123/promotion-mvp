@@ -83,7 +83,7 @@ export default function PublishV2({ user, setUser }: { user: any; isMobile?: boo
           status: 'active',
           hot_score: 0,
           participant_count: 0,
-          content_count: 0,
+          meme_count: 0,
           tags: JSON.stringify(tags),
           created_by: user.id,
         }
