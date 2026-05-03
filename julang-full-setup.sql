@@ -289,26 +289,18 @@ DO $$ BEGIN
 END $$;
 
 -- =============================================
--- 第十二部分：自动确认用户（绕过邮箱验证）
+-- 第十二部分：users 表扩展（邮箱字段）
 -- =============================================
 
-CREATE OR REPLACE FUNCTION public.auto_confirm_user()
-RETURNS trigger AS $$
-BEGIN
-  UPDATE auth.users
-  SET email_confirmed_at = now(),
-      confirmed_at = now()
-  WHERE id = NEW.id
-    AND email_confirmed_at IS NULL;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(200) DEFAULT '';
 
+-- =============================================
+-- 第十三部分：禁用自动确认（启用邮箱验证）
+-- =============================================
+
+-- 删除自动确认触发器（改为真实邮箱验证）
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW
-  EXECUTE FUNCTION public.auto_confirm_user();
+DROP FUNCTION IF EXISTS public.auto_confirm_user();
 
 -- =============================================
 -- 完成！

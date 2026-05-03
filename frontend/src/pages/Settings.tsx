@@ -23,8 +23,10 @@ export default function Settings({ user, setUser }: { user: any; setUser: (u: an
     setChangingPwd(true)
     try {
       // 先验证旧密码
+      const { data: userRecord } = await supabase.from('users').select('email').eq('id', user.id).single()
+      const email = userRecord?.email || `${user.username}@julang.app`
       const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: `${user.username}@julang.app`,
+        email,
         password: oldPwd,
       })
       if (signInError) { toast.error('原密码错误'); return }
