@@ -15,6 +15,7 @@ export default function Search() {
   const [topicResults, setTopicResults] = useState<any[]>([])
   const [memeResults, setMemeResults] = useState<any[]>([])
   const [hotTopics, setHotTopics] = useState<any[]>([])
+  const [hotTags, setHotTags] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -29,6 +30,18 @@ export default function Search() {
       .order('hot_score', { ascending: false })
       .limit(3)
     if (data) setHotTopics(data)
+
+    // 从话题标题提取热门标签
+    const tags = (data || []).map(t => t.title).slice(0, 6)
+    if (tags.length < 6) {
+      // 补充一些默认标签
+      const defaults = ['国产平替', '独立音乐', '古装剧', '10元挑战', '社区英雄', '宇宙探索']
+      while (tags.length < 6 && defaults.length > 0) {
+        const tag = defaults.shift()!
+        if (!tags.includes(tag)) tags.push(tag)
+      }
+    }
+    setHotTags(tags)
   }
 
   const doSearch = async () => {
@@ -104,7 +117,7 @@ export default function Search() {
           <div>
             <h2 className="text-sm font-bold text-gray-900 mb-3">🔥 热门搜索</h2>
             <div className="flex flex-wrap gap-2">
-              {['国产平替', '独立音乐', '古装剧', '10元挑战', '社区英雄', '宇宙探索'].map(tag => (
+              {hotTags.map(tag => (
                 <button
                   key={tag}
                   onClick={() => { setQuery(tag); doSearch() }}

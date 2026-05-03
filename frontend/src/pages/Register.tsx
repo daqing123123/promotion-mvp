@@ -10,6 +10,8 @@ export default function Register({ setUser }: { setUser: any }) {
   const [refCode, setRefCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [checking, setChecking] = useState(false)
+  const [usernameOk, setUsernameOk] = useState<boolean | null>(null)
   const nav = useNavigate()
   const [searchParams] = useSearchParams()
 
@@ -19,6 +21,30 @@ export default function Register({ setUser }: { setUser: any }) {
     if (ref) setRefCode(ref.toUpperCase())
   }, [searchParams])
 
+  // 检查用户名是否可用（防抖）
+  useEffect(() => {
+    if (username.length < 3 || !/^[a-zA-Z0-9_]+$/.test(username)) {
+      setUsernameOk(null)
+      return
+    }
+    setChecking(true)
+    const timer = setTimeout(async () => {
+      try {
+        const { data } = await supabase
+          .from('users')
+          .select('id')
+          .eq('username', username.toLowerCase())
+          .maybeSingle()
+        setUsernameOk(!data)
+      } catch {
+        setUsernameOk(null)
+      } finally {
+        setChecking(false)
+      }
+    }, 500)
+    return () => clearTimeout(timer)
+  }, [username])
+
   const handleRegister = async () => {
     if (!username || !name || !password) return
     if (password !== confirm) { setError('两次密码不一致'); return }
@@ -26,12 +52,13 @@ export default function Register({ setUser }: { setUser: any }) {
     if (!/^[a-zA-Z0-9_]+$/.test(username)) { setError('用户名只能包含英文、数字和下划线'); return }
     if (username.length < 3 || username.length > 20) { setError('用户名3-20个字符'); return }
     if (name.length > 20) { setError('昵称最多20个字'); return }
+    if (usernameOk === false) { setError('用户名已被占用'); return }
 
     setLoading(true)
     setError('')
 
     try {
-      const email = `${username}@julang.app`
+      const email = `${username.toLowerCase()}@julang.app`
       const { data, error: authError } = await supabase.auth.signUp({ email, password })
       if (authError) throw authError
 
@@ -98,7 +125,11 @@ export default function Register({ setUser }: { setUser: any }) {
         nav('/')
       }
     } catch (err: any) {
-      setError(err.message || '注册失败')
+      const msg = err.message || ''
+      if (msg.includes('already registered') || msg.includes('User already registered') || msg.includes('unique')) setError('用户名已被占用')
+      else if (msg.includes('valid email')) setError('用户名格式不正确')
+      else if (msg.includes('weak')) setError('密码强度不够')
+      else setError(msg || '注册失败')
     } finally {
       setLoading(false)
     }
@@ -116,10 +147,21 @@ export default function Register({ setUser }: { setUser: any }) {
         </div>
 
         <div className="space-y-4 mb-6">
-          <input type="text" placeholder="用户名（英文）" value={username} onChange={e => setUsername(e.target.value)} className="w-full px-5 py-4 bg-gray-50 rounded-2xl text-base focus:outline-none focus:ring-2 focus:ring-gray-200" />
-          <input type="text" placeholder="昵称" value={name} onChange={e => setName(e.target.value)} className="w-full px-5 py-4 bg-gray-50 rounded-2xl text-base focus:outline-none focus:ring-2 focus:ring-gray-200" />
-          <input type="password" placeholder="密码（至少6位）" value={password} onChange={e => setPassword(e.target.value)} className="w-full px-5 py-4 bg-gray-50 rounded-2xl text-base focus:outline-none focus:ring-2 focus:ring-gray-200" />
-          <input type="password" placeholder="确认密码" value={confirm} onChange={e => setConfirm(e.target.value)} className="w-full px-5 py-4 bg-gray-50 rounded-2xl text-base focus:outline-none focus:ring-2 focus:ring-gray-200" />
+          <div>
+            <input type="text" placeholder="用户名（英文）" value={username} onChange={e => setUsername(e.target.value.toLowerCase())} onKeyDown={e => e.key === 'Enter' && handleRegister()}
+              className="w-full px-5 py-4 bg-gray-50 rounded-2xl text-base focus:outline-none focus:ring-2 focus:ring-gray-200" />
+            {username.length >= 3 && /^[a-zA-Z0-9_]+$/.test(username) && (
+              <p className={`text-xs mt-1 ml-2 ${checking ? 'text-gray-400' : usernameOk ? 'text-green-500' : 'text-red-500'}`}>
+                {checking ? '检查中...' : usernameOk ? '✅ 用户名可用' : '❌ 用户名已被占用'}
+              </p>
+            )}
+          </div>
+          <input type="text" placeholder="昵称" value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleRegister()}
+            className="w-full px-5 py-4 bg-gray-50 rounded-2xl text-base focus:outline-none focus:ring-2 focus:ring-gray-200" />
+          <input type="password" placeholder="密码（至少6位）" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleRegister()}
+            className="w-full px-5 py-4 bg-gray-50 rounded-2xl text-base focus:outline-none focus:ring-2 focus:ring-gray-200" />
+          <input type="password" placeholder="确认密码" value={confirm} onChange={e => setConfirm(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleRegister()}
+            className="w-full px-5 py-4 bg-gray-50 rounded-2xl text-base focus:outline-none focus:ring-2 focus:ring-gray-200" />
 
           {/* 邀请码（可选） */}
           <div>

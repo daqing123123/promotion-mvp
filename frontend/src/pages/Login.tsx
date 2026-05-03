@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase/client'
+import { toast } from '../lib/toast'
 
 export default function Login({ setUser }: { setUser: any }) {
   const [username, setUsername] = useState('')
@@ -15,7 +16,7 @@ export default function Login({ setUser }: { setUser: any }) {
     setError('')
 
     try {
-      const email = `${username}@julang.app`
+      const email = `${username.trim().toLowerCase()}@julang.app`
       const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
       if (authError) throw authError
 
@@ -69,7 +70,8 @@ export default function Login({ setUser }: { setUser: any }) {
               type="text"
               placeholder="用户名"
               value={username}
-              onChange={e => setUsername(e.target.value)}
+              onChange={e => setUsername(e.target.value.toLowerCase())}
+              onKeyDown={e => e.key === 'Enter' && handleLogin()}
               className="w-full px-5 py-4 bg-gray-50 rounded-2xl text-base focus:outline-none focus:ring-2 focus:ring-gray-200"
             />
           </div>
@@ -79,6 +81,7 @@ export default function Login({ setUser }: { setUser: any }) {
               placeholder="密码"
               value={password}
               onChange={e => setPassword(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleLogin()}
               className="w-full px-5 py-4 bg-gray-50 rounded-2xl text-base focus:outline-none focus:ring-2 focus:ring-gray-200"
             />
           </div>
@@ -104,6 +107,21 @@ export default function Login({ setUser }: { setUser: any }) {
           <span className="text-gray-400 text-sm">还没有账号？</span>
           <button onClick={() => nav('/register')} className="text-sm font-medium text-gray-900 ml-1">
             注册
+          </button>
+        </div>
+
+        {/* 忘记密码 */}
+        <div className="text-center mt-3">
+          <button onClick={() => {
+            if (!username.trim()) { setError('请先输入用户名'); return }
+            const email = `${username.trim().toLowerCase()}@julang.app`
+            supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + '/login' })
+              .then(({ error }) => {
+                if (error) toast.error(error.message)
+                else toast.success('密码重置邮件已发送')
+              })
+          }} className="text-xs text-gray-400 underline">
+            忘记密码？
           </button>
         </div>
       </div>

@@ -120,7 +120,10 @@ export default function Profile({ user, setUser }: { user: any; setUser: (u: any
           <div className="flex items-center gap-3">
             <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center text-3xl">{user.avatar}</div>
             <div>
-              <h1 className="text-xl font-bold">{user.name}</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-bold">{user.name}</h1>
+                <button onClick={() => navigate('/edit-profile')} className="text-xs bg-white/20 px-2 py-0.5 rounded-full">✏️</button>
+              </div>
               <div className="flex items-center gap-1">
                 <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">Lv.{lvl}</span>
                 <span className="text-xs text-white/60">{levelTitleText}</span>
