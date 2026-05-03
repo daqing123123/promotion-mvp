@@ -43,8 +43,11 @@ export default function ContentRenderer({ content, isActive: _isActive }: { cont
           <div className="text-6xl mb-4">{content.type === 'skill' ? '🧠' : content.type === 'agent' ? '🤖' : '💻'}</div>
           <h2 className="text-white text-xl font-bold mb-2">{content.title}</h2>
           <p className="text-white/60 text-sm mb-6">{content.description}</p>
-          <button onClick={() => openLink(content.renderConfig?.detail?.link)} className="w-full py-3 bg-white text-black rounded-2xl font-bold text-sm">
-            {content.type === 'skill' ? '安装 Skill' : content.type === 'agent' ? '开始对话' : '免费试用'}
+          <button onClick={() => {
+            if (content.renderConfig?.detail?.link) window.open(content.renderConfig.detail.link, '_blank')
+            else window.open(`/content/${content.id}`, '_self')
+          }} className="w-full py-3 bg-white text-black rounded-2xl font-bold text-sm">
+            {content.type === 'skill' ? '安装 Skill' : content.type === 'agent' ? '开始对话' : '查看详情'}
           </button>
           <div className="flex justify-center gap-6 mt-4 text-white/40 text-xs">
             <span>❤️ {formatNum(content.stats.likes)}</span>
