@@ -665,6 +665,12 @@ export async function toggleLikeWithPoints(targetType: string, targetId: string)
 
   if (existing) {
     await supabase.from('interactions').delete().eq('id', existing.id)
+    // 减少 like_count
+    const table = targetType === 'meme' ? 'memes' : 'contents'
+    const { data: cur } = await supabase.from(table).select('like_count').eq('id', targetId).single()
+    if (cur) {
+      await supabase.from(table).update({ like_count: Math.max(0, (cur.like_count || 0) - 1) }).eq('id', targetId)
+    }
     return false
   } else {
     await supabase.from('interactions').insert({
@@ -673,6 +679,12 @@ export async function toggleLikeWithPoints(targetType: string, targetId: string)
       target_id: targetId,
       action: 'like',
     })
+    // 增加 like_count
+    const table = targetType === 'meme' ? 'memes' : 'contents'
+    const { data: cur } = await supabase.from(table).select('like_count').eq('id', targetId).single()
+    if (cur) {
+      await supabase.from(table).update({ like_count: (cur.like_count || 0) + 1 }).eq('id', targetId)
+    }
     try {
       await earnPoints(user.id, 5, 'like', '点赞获得积分')
     } catch {
@@ -1117,4 +1129,153 @@ export async function createNotification(userId: string, type: string, title: st
     related_id: relatedId || '',
     is_read: false,
   })
+}
+
+// ===== 引流 & 增长功能 =====
+
+// 获取今日分享次数（用于每日任务判断）
+export async function getTodayShareCount(userId: string): Promise<number> {
+  const today = new Date().toISOString().split('T')[0]
+  const { count } = await supabase
+    .from('point_logs')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('type', 'share')
+    .gte('created_at', today + 'T00:00:00')
+  return count || 0
+}
+
+// 分享内容到外部（带去重：同一内容每天只给一次积分）
+export async function shareContent(userId: string, contentId: string): Promise<{ earned: boolean; points: number }> {
+  const today = new Date().toISOString().split('T')[0]
+  // 检查今天是否已分享过该内容
+  const { data: existing } = await supabase
+    .from('point_logs')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('type', 'share')
+    .eq('description', `分享内容 ${contentId}`)
+    .gte('created_at', today + 'T00:00:00')
+    .maybeSingle()
+
+  if (existing) return { earned: false, points: 0 }
+
+  // 每日分享上限 10 次
+  const todayCount = await getTodayShareCount(userId)
+  if (todayCount >= 10) return { earned: false, points: 0 }
+
+  try {
+    await earnPoints(userId, 3, 'share', `分享内容 ${contentId}`)
+    return { earned: true, points: 3 }
+  } catch {
+    return { earned: false, points: 0 }
+  }
+}
+
+// 邀请好友的曝光加成：被邀请人帮推时，邀请人的内容 hot_score +5%
+export async function applyInviteBoost(inviterId: string, contentId: string) {
+  try {
+    const { data: content } = await supabase
+      .from('contents')
+      .select('hot_score')
+      .eq('id', contentId)
+      .eq('creator_id', inviterId)
+      .single()
+
+    if (content) {
+      const boost = Math.floor((content.hot_score || 100) * 0.05)
+      await supabase
+        .from('contents')
+        .update({ hot_score: (content.hot_score || 100) + boost })
+        .eq('id', contentId)
+    }
+  } catch {}
+}
+
+// 获取用户的邀请码（如果没有则自动生成）
+export async function getOrCreateInviteCode(userId: string): Promise<string> {
+  const { data: existing } = await supabase
+    .from('referral_codes')
+    .select('code')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (existing) return existing.code
+
+  // 生成 6 位邀请码
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  let code = ''
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)]
+
+  try {
+    await supabase.from('referral_codes').insert({
+      user_id: userId,
+      code,
+      uses_count: 0,
+      max_uses: 0,
+    })
+  } catch {
+    // 如果冲突（极小概率），重新生成
+    code = ''
+    for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)]
+    await supabase.from('referral_codes').insert({ user_id: userId, code, uses_count: 0, max_uses: 0 })
+  }
+
+  return code
+}
+
+// 获取邀请排行榜（前 10 名）
+export async function getInviteLeaderboard() {
+  const { data, error } = await supabase
+    .from('referrals')
+    .select('referrer_id')
+    .eq('status', 'registered')
+
+  if (error || !data) return []
+
+  // 统计每人邀请数
+  const counts: Record<string, number> = {}
+  for (const r of data) {
+    counts[r.referrer_id] = (counts[r.referrer_id] || 0) + 1
+  }
+
+  // 排序取前 10
+  const sorted = Object.entries(counts).sort(([, a], [, b]) => b - a).slice(0, 10)
+
+  if (sorted.length === 0) return []
+
+  // 获取用户信息
+  const userIds = sorted.map(([id]) => id)
+  const { data: users } = await supabase
+    .from('users')
+    .select('id, name, avatar')
+    .in('id', userIds)
+
+  const usersMap = Object.fromEntries((users || []).map(u => [u.id, u]))
+
+  return sorted.map(([id, count], index) => ({
+    rank: index + 1,
+    userId: id,
+    name: usersMap[id]?.name || '用户',
+    avatar: usersMap[id]?.avatar || '👤',
+    inviteCount: count,
+  }))
+}
+
+// 获取邀请统计
+export async function getInviteStats(userId: string) {
+  const [codeRes, countRes, bonusRes] = await Promise.all([
+    supabase.from('referral_codes').select('code, uses_count').eq('user_id', userId).maybeSingle(),
+    supabase.from('referrals').select('*', { count: 'exact', head: true }).eq('referrer_id', userId),
+    supabase.from('referrals').select('referrer_reward').eq('referrer_id', userId),
+  ])
+
+  const totalBonus = (bonusRes.data || []).reduce((s, r) => s + (r.referrer_reward || 0), 0)
+
+  return {
+    code: codeRes.data?.code || '',
+    inviteCount: countRes.count || 0,
+    totalBonus,
+    usesCount: codeRes.data?.uses_count || 0,
+  }
 }

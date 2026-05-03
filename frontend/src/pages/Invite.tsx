@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase, earnPoints } from '../lib/supabase/client'
+import { supabase, earnPoints, getInviteLeaderboard } from '../lib/supabase/client'
 import { toast } from '../lib/toast'
 
 const GROWTH_LEVELS = [
@@ -30,6 +30,7 @@ export default function Invite({ user }: { user: any }) {
   const [loading, setLoading] = useState(true)
   const [inputCode, setInputCode] = useState('')
   const [claiming, setClaiming] = useState(false)
+  const [leaderboard, setLeaderboard] = useState<any[]>([])
 
   useEffect(() => {
     if (user?.id) loadInviteData()
@@ -72,6 +73,12 @@ export default function Invite({ user }: { user: any }) {
     }
 
     setLoading(false)
+
+    // 加载排行榜
+    try {
+      const board = await getInviteLeaderboard()
+      setLeaderboard(board)
+    } catch {}
   }
 
   const handleShare = () => {
@@ -340,6 +347,29 @@ export default function Invite({ user }: { user: any }) {
                   </div>
                 </div>
                 <div className="text-xs text-green-500 font-medium">+{invite.referrer_reward}积分</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 邀请排行榜 */}
+      {leaderboard.length > 0 && (
+        <div className="mx-5 mt-4 bg-white rounded-2xl p-5 border border-gray-100">
+          <h3 className="text-sm font-bold text-gray-900 mb-3">🏅 邀请排行榜</h3>
+          <div className="space-y-2">
+            {leaderboard.map(item => (
+              <div key={item.userId} className={`flex items-center gap-3 p-2 rounded-lg ${item.userId === user?.id ? 'bg-purple-50' : ''}`}>
+                <span className={`text-sm font-bold w-6 text-center ${item.rank <= 3 ? 'text-orange-500' : 'text-gray-400'}`}>
+                  {item.rank <= 3 ? ['🥇', '🥈', '🥉'][item.rank - 1] : `#${item.rank}`}
+                </span>
+                <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-sm">{item.avatar}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-gray-900 truncate">
+                    {item.name} {item.userId === user?.id && <span className="text-xs text-purple-500">(我)</span>}
+                  </div>
+                </div>
+                <div className="text-xs text-gray-500">{item.inviteCount}人</div>
               </div>
             ))}
           </div>

@@ -23,6 +23,9 @@ export default function Register({ setUser }: { setUser: any }) {
     if (!username || !name || !password) return
     if (password !== confirm) { setError('两次密码不一致'); return }
     if (password.length < 6) { setError('密码至少6位'); return }
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) { setError('用户名只能包含英文、数字和下划线'); return }
+    if (username.length < 3 || username.length > 20) { setError('用户名3-20个字符'); return }
+    if (name.length > 20) { setError('昵称最多20个字'); return }
 
     setLoading(true)
     setError('')
@@ -52,7 +55,7 @@ export default function Register({ setUser }: { setUser: any }) {
               .from('referral_codes')
               .select('*')
               .eq('code', refCode.trim())
-              .single()
+              .maybeSingle()
 
             if (codeData) {
               // 创建邀请记录

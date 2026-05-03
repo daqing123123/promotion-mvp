@@ -9,6 +9,7 @@ export interface Content {
   description: string
   cover: string
   url?: string
+  _source?: 'contents' | 'memes'  // 数据来源表：用于 targetType 判断
   creator: { id: string; name: string; avatar: string; level: number }
   stats: { views: number; likes: number; comments: number; shares: number; favorites: number; promotes: number }
   tags: string[]

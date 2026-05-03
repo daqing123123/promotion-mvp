@@ -3,8 +3,9 @@
 import { useState, useEffect } from 'react'
 import { type Content } from '../lib/contentData'
 import { formatStat } from '../lib/memeSystem'
-import { supabase, toggleLikeWithPoints, toggleFavorite, promoteContent } from '../lib/supabase/client'
+import { supabase, toggleLikeWithPoints, toggleFavorite, promoteContent, earnPoints } from '../lib/supabase/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
+import { toast } from '../lib/toast'
 import CommentSheet from './CommentSheet'
 
 export default function FeedControls({ content, user, onMeme, onModalToggle }: { content: Content; user: any; onMeme?: () => void; onModalToggle?: (open: boolean) => void }) {
@@ -16,9 +17,10 @@ export default function FeedControls({ content, user, onMeme, onModalToggle }: {
   const [favCount, setFavCount] = useState(content.stats.favorites)
   const [promoting, setPromoting] = useState(false)
   const [promoted, setPromoted] = useState(false)
-  const [toast, setToast] = useState('')
 
-  const targetType = content.type === 'content' ? 'content' : 'meme'
+  // 用 _source 判断 targetType，兜底用 type 判断
+  const targetType = content._source === 'memes' ? 'meme' : 'content'
+  const isMeme = content._source === 'memes'
 
   // 弹窗状态同步到 FeedContainer
   useEffect(() => {
@@ -48,22 +50,14 @@ export default function FeedControls({ content, user, onMeme, onModalToggle }: {
     setCommentCount(content.stats.comments)
   }, [content.id])
 
-  // Toast 自动消失
-  useEffect(() => {
-    if (toast) {
-      const t = setTimeout(() => setToast(''), 2000)
-      return () => clearTimeout(t)
-    }
-  }, [toast])
-
   const handleLike = async () => {
-    if (!user?.id) { setToast('请先登录'); return }
+    if (!user?.id) { toast.warning('请先登录'); return }
     const prev = liked
     setLiked(!prev)
     setLikeCount(c => c + (prev ? -1 : 1))
     try {
       await toggleLikeWithPoints(targetType, content.id)
-      if (!prev) setToast('+5 积分')
+      if (!prev) toast.points(5)
       checkAndUnlockAchievements(user.id).catch(() => {})
     } catch {
       setLiked(prev)
@@ -72,7 +66,7 @@ export default function FeedControls({ content, user, onMeme, onModalToggle }: {
   }
 
   const handleFavorite = async () => {
-    if (!user?.id) { setToast('请先登录'); return }
+    if (!user?.id) { toast.warning('请先登录'); return }
     const prev = favorited
     setFavorited(!prev)
     setFavCount(c => c + (prev ? -1 : 1))
@@ -85,23 +79,49 @@ export default function FeedControls({ content, user, onMeme, onModalToggle }: {
   }
 
   const handlePromote = async () => {
-    if (!user?.id) { setToast('请先登录'); return }
+    if (!user?.id) { toast.warning('请先登录'); return }
     if (promoted || promoting) return
     setPromoting(true)
     try {
       await promoteContent(user.id, content.id)
       setPromoted(true)
-      setToast('🔥 帮推成功 +20积分')
+      toast.points(20)
       checkAndUnlockAchievements(user.id).catch(() => {})
     } catch (e: any) {
       if (e.message === '已经帮推过该内容') {
         setPromoted(true)
       } else {
-        setToast(e.message || '帮推失败')
+        toast.error(e.message || '帮推失败')
       }
     } finally {
       setPromoting(false)
     }
+  }
+
+  const handleShare = async () => {
+    const url = window.location.origin + '/content/' + content.id
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: content.title, url })
+      } else {
+        await navigator.clipboard.writeText(url)
+        toast.success('链接已复制 ✓')
+      }
+      // 分享给积分
+      if (user?.id) {
+        try {
+          await earnPoints(user.id, 3, 'share', '分享内容')
+          toast.points(3)
+        } catch {}
+      }
+      // 更新分享数
+      const table = isMeme ? 'memes' : 'contents'
+      const countField = 'share_count'
+      const { data: cur } = await supabase.from(table).select(countField).eq('id', content.id).single()
+      if (cur) {
+        await supabase.from(table).update({ [countField]: (cur[countField] || 0) + 1 }).eq('id', content.id)
+      }
+    } catch {}
   }
 
   return (
@@ -131,11 +151,13 @@ export default function FeedControls({ content, user, onMeme, onModalToggle }: {
           <span className="text-white text-[11px]">{formatStat(commentCount)}</span>
         </button>
 
-        {/* 帮推 */}
-        <button onClick={handlePromote} className="flex flex-col items-center gap-0.5">
-          <span className="text-2xl">{promoted ? '✅' : promoting ? '⏳' : '🔥'}</span>
-          <span className="text-white text-[11px]">{promoted ? '已推' : '帮推'}</span>
-        </button>
+        {/* 帮推 — 仅 contents 可用，memes 无 FK */}
+        {!isMeme && (
+          <button onClick={handlePromote} className="flex flex-col items-center gap-0.5">
+            <span className="text-2xl">{promoted ? '✅' : promoting ? '⏳' : '🔥'}</span>
+            <span className="text-white text-[11px]">{promoted ? '已推' : '帮推'}</span>
+          </button>
+        )}
 
         {/* 收藏 */}
         <button onClick={handleFavorite} className="flex flex-col items-center gap-0.5">
@@ -144,32 +166,17 @@ export default function FeedControls({ content, user, onMeme, onModalToggle }: {
         </button>
 
         {/* 分享 */}
-        <button onClick={() => {
-          const url = window.location.origin + '/content/' + content.id
-          if (navigator.share) {
-            navigator.share({ title: content.title, url })
-          } else {
-            navigator.clipboard.writeText(url)
-            setToast('链接已复制 ✓')
-          }
-        }} className="flex flex-col items-center gap-0.5">
+        <button onClick={handleShare} className="flex flex-col items-center gap-0.5">
           <span className="text-2xl">↗️</span>
           <span className="text-white text-[11px]">{formatStat(content.stats.shares)}</span>
         </button>
       </div>
 
-      {/* Toast */}
-      {toast && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[200] bg-white/90 backdrop-blur-sm text-gray-900 text-sm font-medium px-5 py-2.5 rounded-full shadow-lg animate-bounce">
-          {toast}
-        </div>
-      )}
-
       {/* 评论底部弹窗 */}
       {showComments && (
         <CommentSheet
           contentId={content.id}
-          source={content.type === 'content' ? 'contents' : 'memes'}
+          source={isMeme ? 'memes' : 'contents'}
           userId={user?.id}
           onClose={() => setShowComments(false)}
           onCommentAdded={() => setCommentCount(c => c + 1)}

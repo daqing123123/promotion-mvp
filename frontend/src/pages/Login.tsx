@@ -42,7 +42,11 @@ export default function Login({ setUser }: { setUser: any }) {
       })
       nav('/')
     } catch (err: any) {
-      setError(err.message || '登录失败')
+      const msg = err.message || ''
+      if (msg.includes('Invalid login') || msg.includes('invalid_credentials')) setError('用户名或密码错误')
+      else if (msg.includes('Email not confirmed')) setError('账号未验证')
+      else if (msg.includes('Too many')) setError('登录太频繁，请稍后再试')
+      else setError(msg || '登录失败')
     } finally {
       setLoading(false)
     }

@@ -118,6 +118,7 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
       return {
         id: item.id, type: item.type, title: item.title, description: item.description || '',
         cover: item.cover_url || '/placeholder-1.svg', tags: item.tags || [],
+        _source: 'contents' as const,
         creator: { id: item.creator_id || '', name: u.name || '用户', avatar: u.avatar || '👤', level: u.level || 1 },
         stats: { views: item.view_count || 0, likes: item.like_count || 0, comments: item.comment_count || 0, shares: item.share_count || 0, favorites: item.favorite_count || 0, promotes: item.promote_count || 0 },
         renderConfig: { mode: (item.render_mode as any) || 'card', src: item.render_src || '', detail: item.render_config || {} },
@@ -132,6 +133,7 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
       return {
         id: item.id, type: 'content', title: item.title || item.content?.substring(0, 30) || '',
         description: item.content || '', cover: item.image_url || '/placeholder-1.svg', tags: item.hashtags || [],
+        _source: 'memes' as const,
         creator: { id: item.creator_id || '', name: item.creator_name || u.name || '匿名用户', avatar: item.creator_avatar || u.avatar || '👤', level: u.level || 1 },
         stats: { views: item.view_count || 0, likes: item.like_count || 0, comments: memeCommentsMap[item.id] || 0, shares: item.share_count || 0, favorites: 0, promotes: 0 },
         renderConfig: { mode: 'card', src: '', detail: {} },

@@ -5,6 +5,16 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase/client'
 import { levelTitle, levelProgress as calcLevelProgress, formatXP, xpForNextLevel } from '../lib/levels'
 import { getAchievementProgressList, AchievementDef } from '../lib/achievements'
+import { toast } from '../lib/toast'
+
+const GROWTH_LEVELS: Record<string, { name: string; icon: string; color: string }> = {
+  newbie: { name: '新手', icon: '🌱', color: 'text-gray-500' },
+  starter: { name: '入门', icon: '🌿', color: 'text-green-500' },
+  promoter: { name: '推广达人', icon: '🌳', color: 'text-blue-500' },
+  expert: { name: '资深达人', icon: '⭐', color: 'text-yellow-500' },
+  master: { name: '大师', icon: '👑', color: 'text-purple-500' },
+  legend: { name: '传奇', icon: '🏆', color: 'text-orange-500' },
+}
 
 export default function Profile({ user, setUser }: { user: any; setUser: (u: any) => void }) {
   const navigate = useNavigate()
@@ -12,13 +22,46 @@ export default function Profile({ user, setUser }: { user: any; setUser: (u: any
   const [myContents, setMyContents] = useState<any[]>([])
   const [achievements, setAchievements] = useState<(AchievementDef & { isUnlocked: boolean; progress: { current: number; max: number } })[]>([])
   const [loading, setLoading] = useState(true)
+  const [myCode, setMyCode] = useState('')
+  const [inviteCount, setInviteCount] = useState(0)
+  const [growthLevel, setGrowthLevel] = useState('newbie')
 
   useEffect(() => {
     if (user) {
       fetchMyContents()
       loadAchievements()
+      fetchGrowthData()
     }
   }, [user])
+
+  const fetchGrowthData = async () => {
+    if (!user) return
+    try {
+      // 获取我的邀请码
+      const { data: codeData } = await supabase
+        .from('referral_codes')
+        .select('code')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      if (codeData) setMyCode(codeData.code)
+
+      // 获取邀请人数
+      const { count } = await supabase
+        .from('referrals')
+        .select('*', { count: 'exact', head: true })
+        .eq('referrer_id', user.id)
+      setInviteCount(count || 0)
+
+      // 计算成长等级
+      const c = count || 0
+      if (c >= 50) setGrowthLevel('legend')
+      else if (c >= 20) setGrowthLevel('master')
+      else if (c >= 10) setGrowthLevel('expert')
+      else if (c >= 5) setGrowthLevel('promoter')
+      else if (c >= 1) setGrowthLevel('starter')
+      else setGrowthLevel('newbie')
+    } catch {}
+  }
 
   const loadAchievements = async () => {
     if (!user) return
@@ -104,6 +147,51 @@ export default function Profile({ user, setUser }: { user: any; setUser: (u: any
           <div className="text-center"><div className="text-lg font-bold">{user.points || 0}</div><div className="text-[10px] text-white/60">积分</div></div>
         </div>
       </div>
+
+      {/* 快捷入口 */}
+      <div className="mx-5 mt-4 grid grid-cols-4 gap-3">
+        <button onClick={() => navigate('/points-center')} className="bg-white rounded-xl p-3 text-center border border-gray-100">
+          <div className="text-xl mb-1">💰</div>
+          <div className="text-[10px] text-gray-600">积分中心</div>
+        </button>
+        <button onClick={() => navigate('/invite')} className="bg-white rounded-xl p-3 text-center border border-gray-100">
+          <div className="text-xl mb-1">👥</div>
+          <div className="text-[10px] text-gray-600">邀请好友</div>
+        </button>
+        <button onClick={() => navigate('/checkin')} className="bg-white rounded-xl p-3 text-center border border-gray-100">
+          <div className="text-xl mb-1">📅</div>
+          <div className="text-[10px] text-gray-600">签到</div>
+        </button>
+        <button onClick={() => navigate('/achievements')} className="bg-white rounded-xl p-3 text-center border border-gray-100">
+          <div className="text-xl mb-1">🏆</div>
+          <div className="text-[10px] text-gray-600">成就</div>
+        </button>
+      </div>
+
+      {/* 邀请码 & 成长等级 */}
+      {myCode && (
+        <div className="mx-5 mt-4 bg-white rounded-2xl p-4 border border-gray-100">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">{GROWTH_LEVELS[growthLevel]?.icon || '🌱'}</span>
+              <div>
+                <span className={`text-xs font-bold ${GROWTH_LEVELS[growthLevel]?.color || 'text-gray-500'}`}>
+                  {GROWTH_LEVELS[growthLevel]?.name || '新手'}
+                </span>
+                <span className="text-xs text-gray-400 ml-2">邀请 {inviteCount} 人</span>
+              </div>
+            </div>
+            <button onClick={() => navigate('/invite')} className="text-xs bg-black text-white px-3 py-1.5 rounded-full">
+              邀请好友
+            </button>
+          </div>
+          <div className="flex items-center gap-2 bg-gray-50 rounded-xl p-3">
+            <span className="text-xs text-gray-400">邀请码</span>
+            <span className="text-base font-mono font-bold tracking-widest">{myCode}</span>
+            <button onClick={() => { navigator.clipboard.writeText(myCode); toast.success('已复制') }} className="ml-auto text-xs text-blue-500">复制</button>
+          </div>
+        </div>
+      )}
 
       {/* Tab */}
       <div className="flex bg-white border-b border-gray-100">
