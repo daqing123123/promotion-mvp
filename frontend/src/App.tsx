@@ -92,7 +92,7 @@ function AppLayout() {
             <Route path="/" element={<HomeV2 user={user} setUser={setUser} isMobile={isMobile} />} />
             <Route path="/promote" element={<Promote user={user} setUser={setUser} isMobile={isMobile} />} />
             <Route path="/topics" element={<Topics />} />
-            <Route path="/topic/:id" element={<TopicDetail />} />
+            <Route path="/topic/:id" element={<TopicDetail user={user} />} />
             <Route path="/content/:id" element={<ContentDetail user={user} />} />
             <Route path="/search" element={<Search />} />
             <Route path="/chat" element={user ? <ChatPage user={user} /> : <Login setUser={setUser} />} />

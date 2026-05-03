@@ -114,10 +114,18 @@ export default function Topics() {
               <span className="text-[11px] text-gray-400 ml-auto">{getDaysLeft(topic.end_date)}</span>
             </div>
             <h3 className="text-base font-bold text-gray-900 mb-1">{topic.title}</h3>
+            {/* 品牌名 */}
+            {topic.brand_name && (
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="text-xs text-blue-600 font-medium">🏷️ {topic.brand_name}</span>
+                {topic.promote_reward > 0 && <span className="text-xs text-gray-400">· 帮推 +{topic.promote_reward}积分</span>}
+              </div>
+            )}
             <p className="text-sm text-gray-500 mb-3 line-clamp-2">{topic.description}</p>
             <div className="flex items-center gap-2 mb-3">
               <div className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center text-xs">{topic.creator_avatar}</div>
-              <span className="text-xs text-gray-400">{topic.creator_name}</span>
+              <span className="text-xs text-gray-400">{topic.brand_name || topic.creator_name}</span>
+              {topic.creator_type === 'brand' && <span className="px-1.5 py-0.5 text-[9px] bg-blue-50 text-blue-500 rounded">品牌</span>}
             </div>
             <div className="grid grid-cols-4 gap-2">
               <div className="text-center"><div className="text-sm font-bold text-gray-900">{topic.meme_count}</div><div className="text-[10px] text-gray-400">梗</div></div>

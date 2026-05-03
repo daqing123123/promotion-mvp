@@ -44,6 +44,12 @@ interface FormData {
   rewardPool: string
   voteOptions: string
   voteEndDate: string
+  // 品牌推广
+  brandName: string
+  brandLogo: string
+  brandDescription: string
+  promoteReward: string
+  promoteTarget: string
 }
 
 export default function PublishV2({ user, setUser }: { user: any; isMobile?: boolean; setUser?: (u: any) => void }) {
@@ -52,6 +58,7 @@ export default function PublishV2({ user, setUser }: { user: any; isMobile?: boo
   const [form, setForm] = useState<FormData>({
     title: '', description: '', content: '', tags: '', coverUrl: '', videoUrl: '', imageUrl: '',
     topicType: 'discussion', rewardPool: '', voteOptions: '', voteEndDate: '',
+    brandName: '', brandLogo: '', brandDescription: '', promoteReward: '20', promoteTarget: '100',
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -86,6 +93,17 @@ export default function PublishV2({ user, setUser }: { user: any; isMobile?: boo
           meme_count: 0,
           tags: JSON.stringify(tags),
           created_by: user.id,
+          creator_id: user.id,
+          creator_name: user.name || '',
+          creator_avatar: user.avatar || '👤',
+          creator_type: form.brandName.trim() ? 'brand' : 'personal',
+          // 品牌信息
+          brand_name: form.brandName.trim(),
+          brand_logo: form.brandLogo.trim(),
+          brand_description: form.brandDescription.trim(),
+          promote_reward: parseInt(form.promoteReward) || 20,
+          promote_target: parseInt(form.promoteTarget) || 100,
+          promote_count: 0,
         }
 
         // 如果有奖励池
@@ -289,6 +307,68 @@ export default function PublishV2({ user, setUser }: { user: any; isMobile?: boo
                   placeholder="设置话题奖励池积分"
                   className="w-full px-4 py-3 bg-gray-50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-200"
                 />
+              </div>
+
+              {/* 品牌推广信息 */}
+              <div className="bg-blue-50 rounded-xl p-4 space-y-3">
+                <h3 className="text-sm font-medium text-blue-800">🏷️ 品牌推广（可选）</h3>
+                <p className="text-xs text-blue-600">填写品牌信息后，话题会标记为"品牌推广"，用户可以接受推广任务赚积分</p>
+
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">品牌名称</label>
+                  <input
+                    type="text"
+                    value={form.brandName}
+                    onChange={e => update('brandName', e.target.value)}
+                    placeholder="如：小米、瑞幸、完美日记..."
+                    className="w-full px-4 py-3 bg-white rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">品牌 Logo URL</label>
+                  <input
+                    type="text"
+                    value={form.brandLogo}
+                    onChange={e => update('brandLogo', e.target.value)}
+                    placeholder="品牌Logo图片链接"
+                    className="w-full px-4 py-3 bg-white rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">品牌简介</label>
+                  <input
+                    type="text"
+                    value={form.brandDescription}
+                    onChange={e => update('brandDescription', e.target.value)}
+                    placeholder="一句话介绍品牌..."
+                    className="w-full px-4 py-3 bg-white rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 mb-1 block">每次帮推奖励</label>
+                    <input
+                      type="number"
+                      value={form.promoteReward}
+                      onChange={e => update('promoteReward', e.target.value)}
+                      placeholder="20"
+                      className="w-full px-4 py-3 bg-white rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 mb-1 block">目标帮推次数</label>
+                    <input
+                      type="number"
+                      value={form.promoteTarget}
+                      onChange={e => update('promoteTarget', e.target.value)}
+                      placeholder="100"
+                      className="w-full px-4 py-3 bg-white rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* 投票选项（投票类型时显示） */}
