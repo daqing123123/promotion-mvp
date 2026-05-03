@@ -50,6 +50,8 @@ interface FormData {
   brandDescription: string
   promoteReward: string
   promoteTarget: string
+  rewardType: string
+  rewardDescription: string
 }
 
 export default function PublishV2({ user, setUser }: { user: any; isMobile?: boolean; setUser?: (u: any) => void }) {
@@ -59,6 +61,7 @@ export default function PublishV2({ user, setUser }: { user: any; isMobile?: boo
     title: '', description: '', content: '', tags: '', coverUrl: '', videoUrl: '', imageUrl: '',
     topicType: 'discussion', rewardPool: '', voteOptions: '', voteEndDate: '',
     brandName: '', brandLogo: '', brandDescription: '', promoteReward: '20', promoteTarget: '100',
+    rewardType: 'points', rewardDescription: '',
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -104,6 +107,8 @@ export default function PublishV2({ user, setUser }: { user: any; isMobile?: boo
           promote_reward: parseInt(form.promoteReward) || 20,
           promote_target: parseInt(form.promoteTarget) || 100,
           promote_count: 0,
+          reward_type: form.rewardType,
+          reward_description: form.rewardDescription.trim(),
         }
 
         // 如果有奖励池
@@ -369,6 +374,45 @@ export default function PublishV2({ user, setUser }: { user: any; isMobile?: boo
                     />
                   </div>
                 </div>
+
+                {/* 奖励类型 */}
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-2 block">奖励类型</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { key: 'points', label: '💰 纯积分', desc: '帮推即得积分' },
+                      { key: 'physical', label: '📦 纯实物', desc: '需填收货地址' },
+                      { key: 'both', label: '🎁 积分+实物', desc: '积分+实物双享' },
+                    ].map(rt => (
+                      <button
+                        key={rt.key}
+                        onClick={() => update('rewardType', rt.key)}
+                        className={`p-3 rounded-xl text-center transition-all ${
+                          form.rewardType === rt.key
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white text-gray-600 border border-gray-200'
+                        }`}
+                      >
+                        <div className="text-sm mb-0.5">{rt.label}</div>
+                        <div className="text-[10px] opacity-70">{rt.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 实物奖励描述 */}
+                {(form.rewardType === 'physical' || form.rewardType === 'both') && (
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 mb-1 block">实物奖励说明</label>
+                    <input
+                      type="text"
+                      value={form.rewardDescription}
+                      onChange={e => update('rewardDescription', e.target.value)}
+                      placeholder="如：限量版耳机 x10、新品试用装 x50"
+                      className="w-full px-4 py-3 bg-white rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* 投票选项（投票类型时显示） */}

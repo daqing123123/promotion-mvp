@@ -1,8 +1,8 @@
-// ===== 话题详情页 — 品牌推广版 =====
+// ===== 话题详情页 — 品牌推广完整版 =====
 
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { supabase, earnPoints } from '../lib/supabase/client'
+import { supabase, earnPoints, toggleLikeWithPoints, addCommentWithPoints } from '../lib/supabase/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
 import MemeModal from '../components/MemeModal'
 
@@ -11,11 +11,20 @@ export default function TopicDetail({ user }: { user?: any }) {
   const { id } = useParams()
   const [topic, setTopic] = useState<any>(null)
   const [memes, setMemes] = useState<any[]>([])
+  const [comments, setComments] = useState<any[]>([])
+  const [newComment, setNewComment] = useState('')
   const [showMemeCreate, setShowMemeCreate] = useState(false)
   const [loading, setLoading] = useState(true)
   const [promoted, setPromoted] = useState(false)
   const [accepting, setAccepting] = useState(false)
+  const [liked, setLiked] = useState(false)
+  const [likeCount, setLikeCount] = useState(0)
+  const [submitting, setSubmitting] = useState(false)
   const [promoteProgress, setPromoteProgress] = useState({ accepted: 0, target: 0 })
+  const [myPromote, setMyPromote] = useState<any>(null)
+  const [showAddressForm, setShowAddressForm] = useState(false)
+  const [address, setAddress] = useState({ name: '', phone: '', address: '' })
+  const [submittingAddress, setSubmittingAddress] = useState(false)
 
   useEffect(() => {
     if (id) fetchTopic(id)
@@ -26,26 +35,47 @@ export default function TopicDetail({ user }: { user?: any }) {
     const { data: t } = await supabase.from('topics').select('*').eq('id', topicId).single()
     setTopic(t)
     if (t) {
-      const { data: m } = await supabase.from('memes').select('*').eq('topic_id', topicId).order('hot_score', { ascending: false })
-      setMemes(m || [])
+      // 并行加载
+      const [memesRes, commentsRes, likeRes] = await Promise.all([
+        supabase.from('memes').select('*').eq('topic_id', topicId).order('hot_score', { ascending: false }),
+        supabase.from('comments').select('*').eq('target_type', 'topic').eq('target_id', topicId).order('created_at', { ascending: false }).limit(50),
+        supabase.from('interactions').select('id').eq('target_type', 'topic').eq('target_id', topicId).eq('action', 'like'),
+      ])
 
-      // 检查当前用户是否已接受推广
-      if (user?.id) {
-        const { data: existing } = await supabase
-          .from('topic_promotes')
-          .select('id')
-          .eq('topic_id', topicId)
-          .eq('user_id', user.id)
-          .maybeSingle()
-        if (existing) setPromoted(true)
+      setMemes(memesRes.data || [])
+      setLikeCount(likeRes.data?.length || 0)
+
+      // 评论 + 用户信息
+      const cmts = commentsRes.data || []
+      const userIds = [...new Set(cmts.map(c => c.user_id).filter(Boolean))]
+      let usersMap: Record<string, any> = {}
+      if (userIds.length > 0) {
+        const { data: usersData } = await supabase.from('users').select('id, name, avatar').in('id', userIds)
+        if (usersData) usersMap = Object.fromEntries(usersData.map(u => [u.id, u]))
       }
+      setComments(cmts.map(c => ({
+        ...c,
+        user_name: usersMap[c.user_id]?.name || '匿名用户',
+        user_avatar: usersMap[c.user_id]?.avatar || '👤',
+      })))
 
-      // 获取推广进度
-      const { count } = await supabase
-        .from('topic_promotes')
-        .select('*', { count: 'exact', head: true })
-        .eq('topic_id', topicId)
-      setPromoteProgress({ accepted: count || 0, target: t.promote_target || 100 })
+      // 当前用户状态
+      if (user?.id) {
+        const [existing, likedRes, promoteData] = await Promise.all([
+          supabase.from('topic_promotes').select('*').eq('topic_id', topicId).eq('user_id', user.id).maybeSingle(),
+          supabase.from('interactions').select('id').eq('user_id', user.id).eq('target_type', 'topic').eq('target_id', topicId).eq('action', 'like').maybeSingle(),
+          supabase.from('topic_promotes').select('*', { count: 'exact', head: true }).eq('topic_id', topicId),
+        ])
+        if (existing.data) {
+          setPromoted(true)
+          setMyPromote(existing.data)
+        }
+        if (likedRes.data) setLiked(true)
+        setPromoteProgress({ accepted: promoteData.count || 0, target: t.promote_target || 100 })
+      } else {
+        const { count } = await supabase.from('topic_promotes').select('*', { count: 'exact', head: true }).eq('topic_id', topicId)
+        setPromoteProgress({ accepted: count || 0, target: t.promote_target || 100 })
+      }
     }
     setLoading(false)
   }
@@ -58,40 +88,116 @@ export default function TopicDetail({ user }: { user?: any }) {
     return days > 0 ? `${days} 天` : '已结束'
   }
 
+  const handleLike = async () => {
+    if (!user?.id) return navigate('/login')
+    const prev = liked
+    setLiked(!prev)
+    setLikeCount(c => c + (prev ? -1 : 1))
+    try {
+      await toggleLikeWithPoints('topic', topic.id)
+      checkAndUnlockAchievements(user.id).catch(() => {})
+    } catch {
+      setLiked(prev)
+      setLikeCount(c => c + (prev ? 1 : -1))
+    }
+  }
+
+  const handleComment = async () => {
+    if (!newComment.trim() || !user?.id) return navigate('/login')
+    setSubmitting(true)
+    try {
+      const inserted = await addCommentWithPoints('topic', topic.id, newComment.trim())
+      const { data: userInfo } = await supabase.from('users').select('name, avatar').eq('id', user.id).single()
+      setComments([{
+        ...inserted,
+        user_name: userInfo?.name || '匿名用户',
+        user_avatar: userInfo?.avatar || '👤',
+      }, ...comments])
+      setNewComment('')
+      checkAndUnlockAchievements(user.id).catch(() => {})
+    } catch (e: any) {
+      alert(e.message || '评论失败')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const handleAcceptPromote = async () => {
     if (!user?.id) return navigate('/login')
     if (promoted || accepting) return
+
+    // 如果是实物奖励，先弹地址表单
+    const isPhysical = topic.reward_type === 'physical' || topic.reward_type === 'both'
+    if (isPhysical && !showAddressForm) {
+      setShowAddressForm(true)
+      return
+    }
+
     setAccepting(true)
     try {
-      const { error } = await supabase.from('topic_promotes').insert({
+      const insertData: any = {
         topic_id: topic.id,
         user_id: user.id,
         status: 'accepted',
         points_earned: topic.promote_reward || 20,
-      })
+      }
+      // 如果有地址信息
+      if (address.name && address.phone && address.address) {
+        insertData.receiver_name = address.name
+        insertData.receiver_phone = address.phone
+        insertData.receiver_address = address.address
+        insertData.status = 'address_submitted'
+      }
+
+      const { error, data } = await supabase.from('topic_promotes').insert(insertData).select().single()
       if (error) throw error
 
       // 给积分
       try {
         await earnPoints(user.id, topic.promote_reward || 20, 'promote', `接受推广任务「${topic.title}」`)
-        // 更新话题推广数
-        await supabase.from('topics').update({ promote_count: (topic.promote_count || 0) + 1 }).eq('id', topic.id)
-        setPromoted(true)
-        setPromoteProgress(p => ({ ...p, accepted: p.accepted + 1 }))
-        checkAndUnlockAchievements(user.id).catch(() => {})
-        alert(`接受推广成功！+${topic.promote_reward || 20}积分`)
       } catch (e: any) {
-        if (e.message?.includes('今日该类积分已达上限')) {
-          setPromoted(true)
-          alert('已接受推广（今日积分已达上限）')
-        } else {
-          throw e
-        }
+        if (!e.message?.includes('今日该类积分已达上限')) throw e
       }
+
+      await supabase.from('topics').update({ promote_count: (topic.promote_count || 0) + 1 }).eq('id', topic.id)
+      setPromoted(true)
+      setMyPromote(data)
+      setPromoteProgress(p => ({ ...p, accepted: p.accepted + 1 }))
+      setShowAddressForm(false)
+      checkAndUnlockAchievements(user.id).catch(() => {})
+      alert(isPhysical ? '已提交！等待商家发货' : `接受推广成功！+${topic.promote_reward || 20}积分`)
     } catch (e: any) {
       alert(e.message || '接受推广失败')
     } finally {
       setAccepting(false)
+    }
+  }
+
+  const handleSubmitAddress = async () => {
+    if (!address.name || !address.phone || !address.address) {
+      return alert('请填写完整收货信息')
+    }
+    setSubmittingAddress(true)
+    try {
+      if (myPromote?.id) {
+        // 已接受推广，更新地址
+        await supabase.from('topic_promotes').update({
+          receiver_name: address.name,
+          receiver_phone: address.phone,
+          receiver_address: address.address,
+          status: 'address_submitted',
+        }).eq('id', myPromote.id)
+        setMyPromote({ ...myPromote, ...address, status: 'address_submitted' })
+        alert('地址已提交！')
+      } else {
+        // 直接接受推广 + 提交地址
+        await handleAcceptPromote()
+      }
+      setShowAddressForm(false)
+    } catch (e: any) {
+      alert(e.message || '提交失败')
+    } finally {
+      setSubmittingAddress(false)
     }
   }
 
@@ -110,10 +216,12 @@ export default function TopicDetail({ user }: { user?: any }) {
   if (!topic) return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-400">话题不存在</div>
 
   const isBrand = topic.creator_type === 'brand' || !!topic.brand_name
+  const isPhysical = topic.reward_type === 'physical' || topic.reward_type === 'both'
+  const isPoints = topic.reward_type === 'points' || topic.reward_type === 'both' || !topic.reward_type
   const progressPercent = promoteProgress.target > 0 ? Math.min(100, Math.round(promoteProgress.accepted / promoteProgress.target * 100)) : 0
 
   return (
-    <div className="bg-gray-50 min-h-screen pb-20">
+    <div className="bg-gray-50 min-h-screen pb-24">
       {/* 品牌头部 */}
       {isBrand && topic.brand_logo ? (
         <div className="relative">
@@ -128,14 +236,11 @@ export default function TopicDetail({ user }: { user?: any }) {
       <div className={`bg-white px-5 pb-5 ${isBrand && topic.brand_logo ? 'pt-14' : 'pt-12'}`}>
         <div className="flex items-center gap-2 mb-3">
           <button onClick={() => navigate(-1)} className="text-gray-400">←</button>
-          {isBrand && (
-            <span className="px-2.5 py-1 text-[11px] font-medium rounded-full bg-blue-50 text-blue-600">🏷️ 品牌推广</span>
-          )}
+          {isBrand && <span className="px-2.5 py-1 text-[11px] font-medium rounded-full bg-blue-50 text-blue-600">🏷️ 品牌推广</span>}
           <span className="px-2.5 py-1 text-[11px] font-medium rounded-full bg-gray-100 text-gray-600">{topic.type}</span>
           <span className="px-2.5 py-1 text-[11px] font-medium rounded-full bg-green-50 text-green-600">{topic.status === 'active' ? '进行中' : '已结束'}</span>
         </div>
 
-        {/* 品牌名 */}
         {topic.brand_name && (
           <div className="flex items-center gap-2 mb-2">
             <span className="text-sm font-medium text-blue-600">{topic.brand_name}</span>
@@ -163,18 +268,65 @@ export default function TopicDetail({ user }: { user?: any }) {
           <div className="bg-gray-50 rounded-xl p-3 text-center"><div className="text-lg font-bold text-orange-500">{topic.hot_score}</div><div className="text-[10px] text-gray-400">热度</div></div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="text-center"><div className="text-sm font-bold text-gray-900">💰 {topic.reward_pool}</div><div className="text-[10px] text-gray-400">奖池积分</div></div>
-          <div className="text-center"><div className="text-sm font-bold text-gray-900">⏰ {getDaysLeft(topic.end_date)}</div><div className="text-[10px] text-gray-400">剩余时间</div></div>
+        {/* 点赞 + 统计栏 */}
+        <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+          <div className="flex items-center gap-5">
+            <button onClick={handleLike} className="flex items-center gap-1.5">
+              <span className="text-xl">{liked ? '❤️' : '🤍'}</span>
+              <span className="text-sm text-gray-600">{likeCount}</span>
+            </button>
+            <button className="flex items-center gap-1.5">
+              <span className="text-xl">💬</span>
+              <span className="text-sm text-gray-600">{comments.length}</span>
+            </button>
+            <button onClick={handleShare} className="flex items-center gap-1.5">
+              <span className="text-xl">↗️</span>
+              <span className="text-sm text-gray-600">分享</span>
+            </button>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-gray-400">
+            {topic.reward_pool > 0 && <span>💰 {topic.reward_pool}积分</span>}
+            <span>⏰ {getDaysLeft(topic.end_date)}</span>
+          </div>
         </div>
       </div>
 
-      {/* 推广任务卡片（品牌话题特有） */}
+      {/* 奖励信息卡片 */}
+      {isBrand && (
+        <div className="mx-5 mt-4 bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl p-4 border border-amber-100">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-lg">🎁</span>
+            <h3 className="text-sm font-bold text-gray-900">奖励内容</h3>
+          </div>
+          <div className="space-y-1.5">
+            {isPoints && (
+              <div className="flex items-center gap-2 text-sm text-gray-700">
+                <span>💰</span>
+                <span>每次帮推 +{topic.promote_reward || 20} 积分</span>
+              </div>
+            )}
+            {isPhysical && (
+              <div className="flex items-center gap-2 text-sm text-gray-700">
+                <span>📦</span>
+                <span>{topic.reward_description || '实物奖励（详见话题说明）'}</span>
+              </div>
+            )}
+            {!isPoints && !isPhysical && (
+              <div className="text-sm text-gray-500">暂无奖励说明</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 推广任务卡片 */}
       {isBrand && (
         <div className="mx-5 mt-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-5 border border-blue-100">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-base font-bold text-gray-900">📢 推广任务</h3>
-            <span className="text-sm text-blue-600 font-medium">+{topic.promote_reward || 20}积分/次</span>
+            <span className="text-sm text-blue-600 font-medium">
+              {isPoints && `+${topic.promote_reward || 20}积分/次`}
+              {isPhysical && !isPoints && '🎁 实物奖励'}
+            </span>
           </div>
 
           {/* 进度条 */}
@@ -188,12 +340,80 @@ export default function TopicDetail({ user }: { user?: any }) {
             </div>
           </div>
 
+          {/* 推广状态 */}
+          {promoted && myPromote && (
+            <div className="mb-3 p-3 bg-white rounded-xl">
+              <div className="flex items-center gap-2 text-sm">
+                {myPromote.status === 'accepted' && <><span className="text-green-500">✅</span><span className="text-gray-700">已接受推广</span></>}
+                {myPromote.status === 'address_submitted' && <><span className="text-blue-500">📬</span><span className="text-gray-700">地址已提交，等待发货</span></>}
+                {myPromote.status === 'shipped' && <><span className="text-purple-500">🚚</span><span className="text-gray-700">已发货，请注意查收</span></>}
+                {myPromote.status === 'received' && <><span className="text-green-500">🎉</span><span className="text-gray-700">已收货</span></>}
+                {myPromote.status === 'completed' && <><span className="text-green-500">✅</span><span className="text-gray-700">已完成</span></>}
+              </div>
+              {/* 补填地址按钮 */}
+              {isPhysical && myPromote.status === 'accepted' && (
+                <button
+                  onClick={() => setShowAddressForm(true)}
+                  className="mt-2 text-xs text-blue-600 underline"
+                >
+                  📝 补填收货地址
+                </button>
+              )}
+            </div>
+          )}
+
           {/* 推广说明 */}
           <div className="text-xs text-gray-500 mb-4 space-y-1">
-            <p>• 接受任务后，分享话题链接给好友</p>
-            <p>• 好友通过你的链接访问，你获得积分奖励</p>
+            {isPoints && <p>• 接受任务后，分享话题链接给好友</p>}
+            {isPoints && <p>• 好友通过你的链接访问，你获得积分奖励</p>}
+            {isPhysical && <p>• 接受任务后填写收货地址</p>}
+            {isPhysical && <p>• 商家审核后发货，收到后请提交反馈</p>}
             <p>• 分享越多，赚得越多，还能解锁帮推成就</p>
           </div>
+
+          {/* 地址表单 */}
+          {showAddressForm && (
+            <div className="mb-4 p-4 bg-white rounded-xl border border-gray-200 space-y-3">
+              <h4 className="text-sm font-bold text-gray-900">📬 收货地址</h4>
+              <input
+                type="text"
+                value={address.name}
+                onChange={e => setAddress(a => ({ ...a, name: e.target.value }))}
+                placeholder="收件人姓名"
+                className="w-full px-3 py-2.5 bg-gray-50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
+              <input
+                type="tel"
+                value={address.phone}
+                onChange={e => setAddress(a => ({ ...a, phone: e.target.value }))}
+                placeholder="手机号"
+                className="w-full px-3 py-2.5 bg-gray-50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
+              <textarea
+                value={address.address}
+                onChange={e => setAddress(a => ({ ...a, address: e.target.value }))}
+                placeholder="详细收货地址（省市区 + 街道门牌号）"
+                rows={3}
+                className="w-full px-3 py-2.5 bg-gray-50 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
+              <div className="flex gap-2">
+                <button onClick={() => setShowAddressForm(false)} className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium">
+                  取消
+                </button>
+                <button
+                  onClick={handleSubmitAddress}
+                  disabled={submittingAddress || !address.name || !address.phone || !address.address}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium ${
+                    address.name && address.phone && address.address
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-200 text-gray-400'
+                  }`}
+                >
+                  {submittingAddress ? '提交中...' : '确认提交'}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* 操作按钮 */}
           <div className="flex gap-3">
@@ -202,6 +422,11 @@ export default function TopicDetail({ user }: { user?: any }) {
                 <button onClick={handleShare} className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold text-sm active:scale-[0.98] transition-transform">
                   📤 分享赚积分
                 </button>
+                {isPhysical && myPromote?.status === 'accepted' && !myPromote?.receiver_name && (
+                  <button onClick={() => setShowAddressForm(true)} className="px-4 py-3 bg-amber-500 text-white rounded-xl font-bold text-sm active:scale-[0.98] transition-transform">
+                    📬 填地址
+                  </button>
+                )}
                 <button className="px-4 py-3 bg-white text-green-600 rounded-xl font-bold text-sm border border-green-200">
                   ✅ 已接受
                 </button>
@@ -212,7 +437,7 @@ export default function TopicDetail({ user }: { user?: any }) {
                 disabled={accepting}
                 className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold text-sm active:scale-[0.98] transition-transform"
               >
-                {accepting ? '接受中...' : `🎯 接受推广任务 (+${topic.promote_reward || 20}积分)`}
+                {accepting ? '接受中...' : isPhysical ? `🎯 接受任务 + 填地址 (+${topic.promote_reward || 20}积分)` : `🎯 接受推广任务 (+${topic.promote_reward || 20}积分)`}
               </button>
             )}
           </div>
@@ -228,7 +453,7 @@ export default function TopicDetail({ user }: { user?: any }) {
 
       {/* 热门梗 */}
       <div className="px-5">
-        <h2 className="text-lg font-bold text-gray-900 mb-3">🔥 热门梗</h2>
+        <h2 className="text-lg font-bold text-gray-900 mb-3">🔥 热门梗 ({memes.length})</h2>
         {memes.length === 0 ? (
           <div className="text-center py-8 text-gray-400">还没有梗，快来第一个造梗！</div>
         ) : (
@@ -260,6 +485,51 @@ export default function TopicDetail({ user }: { user?: any }) {
         )}
       </div>
 
+      {/* 评论区 */}
+      <div className="px-5 mt-6">
+        <h2 className="text-lg font-bold text-gray-900 mb-3">💬 评论 ({comments.length})</h2>
+
+        {/* 发表评论 */}
+        <div className="bg-white rounded-2xl p-4 mb-4 border border-gray-100">
+          <textarea
+            value={newComment}
+            onChange={e => setNewComment(e.target.value)}
+            placeholder="说说你对这个话题的看法..."
+            rows={3}
+            className="w-full text-sm resize-none focus:outline-none"
+          />
+          <div className="flex justify-end mt-2">
+            <button
+              onClick={handleComment}
+              disabled={!newComment.trim() || submitting}
+              className={`px-5 py-2 rounded-full text-sm font-medium transition-all ${
+                newComment.trim() ? 'bg-black text-white' : 'bg-gray-200 text-gray-400'
+              }`}
+            >
+              {submitting ? '发送中...' : '发表 (+5积分)'}
+            </button>
+          </div>
+        </div>
+
+        {/* 评论列表 */}
+        <div className="space-y-3">
+          {comments.length === 0 ? (
+            <div className="text-center py-8 text-gray-400 text-sm">还没有评论，来说两句吧 💬</div>
+          ) : (
+            comments.map(c => (
+              <div key={c.id} className="bg-white rounded-xl p-4 border border-gray-100">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-sm">{c.user_avatar || '👤'}</div>
+                  <span className="text-sm font-medium text-gray-900">{c.user_name || '匿名用户'}</span>
+                  <span className="text-[11px] text-gray-400">{new Date(c.created_at).toLocaleDateString('zh-CN')}</span>
+                </div>
+                <p className="text-sm text-gray-700 leading-relaxed">{c.content}</p>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
       {/* 造梗弹窗 */}
       {showMemeCreate && (
         <MemeModal
@@ -268,12 +538,8 @@ export default function TopicDetail({ user }: { user?: any }) {
           onSuccess={async (meme) => {
             if (!user?.id) { navigate('/login'); return }
             await supabase.from('memes').insert({
-              type: meme.type,
-              title: meme.title,
-              content: meme.content,
-              hashtags: meme.hashtags,
-              topic_id: topic.id,
-              creator_id: user.id,
+              type: meme.type, title: meme.title, content: meme.content,
+              hashtags: meme.hashtags, topic_id: topic.id, creator_id: user.id,
             })
             setShowMemeCreate(false)
             fetchTopic(topic.id)
