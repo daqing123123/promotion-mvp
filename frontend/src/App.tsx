@@ -25,6 +25,11 @@ const Achievements = lazy(() => import('./pages/Achievements'))
 const Invite = lazy(() => import('./pages/Invite'))
 const PointsCenter = lazy(() => import('./pages/PointsCenter'))
 const EditProfile = lazy(() => import('./pages/EditProfile'))
+const Settings = lazy(() => import('./pages/Settings'))
+const Notifications = lazy(() => import('./pages/Notifications'))
+const About = lazy(() => import('./pages/About'))
+const Terms = lazy(() => import('./pages/Terms'))
+const Privacy = lazy(() => import('./pages/Privacy'))
 
 function PageLoader() {
   return (
@@ -114,6 +119,11 @@ function AppLayout() {
             <Route path="/invite" element={user ? <Invite user={user} /> : <Login setUser={setUser} />} />
             <Route path="/points-center" element={user ? <PointsCenter user={user} /> : <Login setUser={setUser} />} />
             <Route path="/edit-profile" element={user ? <EditProfile user={user} setUser={setUser} /> : <Login setUser={setUser} />} />
+            <Route path="/settings" element={user ? <Settings user={user} setUser={setUser} /> : <Login setUser={setUser} />} />
+            <Route path="/notifications" element={user ? <Notifications user={user} /> : <Login setUser={setUser} />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/terms" element={<Terms />} />
+            <Route path="/privacy" element={<Privacy />} />
           </Routes>
         </Suspense>
       </div>

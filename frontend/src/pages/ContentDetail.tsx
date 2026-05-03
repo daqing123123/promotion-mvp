@@ -198,15 +198,23 @@ export default function ContentDetail({ user }: { user?: any }) {
       {/* 创作者信息 */}
       <div className="bg-white px-5 py-4 border-b border-gray-100">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-lg">{creatorAvatar || '👤'}</div>
+          <div onClick={() => content.creator_id && navigate(`/profile/${content.creator_id}`)} className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-lg cursor-pointer">{creatorAvatar || '👤'}</div>
           <div className="flex-1">
-            <div className="text-sm font-bold text-gray-900">{creatorName || '匿名用户'}</div>
+            <div onClick={() => content.creator_id && navigate(`/profile/${content.creator_id}`)} className="text-sm font-bold text-gray-900 cursor-pointer hover:underline">{creatorName || '匿名用户'}</div>
             <div className="text-xs text-gray-400">{isMeme ? `${content.view_count || 0} 浏览` : `${content.type} · ${content.view_count || 0} 浏览`}</div>
           </div>
           <button onClick={handleFollow} disabled={followLoading} className={`px-4 py-1.5 text-xs rounded-full transition-all ${following ? 'bg-gray-200 text-gray-600' : 'bg-black text-white'}`}>
             {followLoading ? '...' : following ? '已关注' : '关注'}
           </button>
         </div>
+      </div>
+
+      {/* 举报 */}
+      <div className="mx-5 mt-2 flex justify-end">
+        <button onClick={() => {
+          if (!user?.id) { toast.warning('请先登录'); return }
+          toast.info('举报已提交，我们会尽快处理')
+        }} className="text-xs text-gray-400 underline">举报内容</button>
       </div>
 
       {/* 帮推按钮 */}

@@ -1,8 +1,8 @@
-// ===== 个人主页 =====
+// ===== 个人主页（支持查看他人） =====
 
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase/client'
+import { useNavigate, useParams } from 'react-router-dom'
+import { supabase, toggleFollow, isFollowing, getFollowCounts } from '../lib/supabase/client'
 import { levelTitle, levelProgress as calcLevelProgress, formatXP, xpForNextLevel } from '../lib/levels'
 import { getAchievementProgressList, AchievementDef } from '../lib/achievements'
 import { toast } from '../lib/toast'
@@ -16,8 +16,11 @@ const GROWTH_LEVELS: Record<string, { name: string; icon: string; color: string 
   legend: { name: '传奇', icon: '🏆', color: 'text-orange-500' },
 }
 
-export default function Profile({ user, setUser }: { user: any; setUser: (u: any) => void }) {
+export default function Profile({ user, setUser: _setUser }: { user: any; setUser: (u: any) => void }) {
   const navigate = useNavigate()
+  const { id: profileId } = useParams()
+  const isOwnProfile = !profileId || profileId === user?.id
+
   const [tab, setTab] = useState<'memes' | 'achievements' | 'stats'>('memes')
   const [myContents, setMyContents] = useState<any[]>([])
   const [achievements, setAchievements] = useState<(AchievementDef & { isUnlocked: boolean; progress: { current: number; max: number } })[]>([])
@@ -26,34 +29,66 @@ export default function Profile({ user, setUser }: { user: any; setUser: (u: any
   const [inviteCount, setInviteCount] = useState(0)
   const [growthLevel, setGrowthLevel] = useState('newbie')
 
+  // 他人资料
+  const [profileUser, setProfileUser] = useState<any>(null)
+  const [following, setFollowing] = useState(false)
+  const [followLoading, setFollowLoading] = useState(false)
+  const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 })
+
+  const displayUser = isOwnProfile ? user : profileUser
+
   useEffect(() => {
-    if (user) {
-      fetchMyContents()
-      loadAchievements()
+    if (isOwnProfile && user) {
+      fetchMyContents(user.id)
+      loadAchievements(user.id)
       fetchGrowthData()
+    } else if (profileId) {
+      loadOtherProfile(profileId)
     }
-  }, [user])
+  }, [profileId, user?.id])
+
+  const loadOtherProfile = async (uid: string) => {
+    setLoading(true)
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', uid)
+        .single()
+
+      if (error || !data) {
+        toast.error('用户不存在')
+        navigate(-1)
+        return
+      }
+
+      setProfileUser(data)
+      fetchMyContents(uid)
+      loadAchievements(uid)
+
+      // 检查关注状态
+      if (user?.id && user.id !== uid) {
+        const [isFol, counts] = await Promise.all([
+          isFollowing(user.id, uid),
+          getFollowCounts(uid),
+        ])
+        setFollowing(isFol)
+        setFollowCounts(counts)
+      }
+    } catch {}
+    setLoading(false)
+  }
 
   const fetchGrowthData = async () => {
     if (!user) return
     try {
-      // 获取我的邀请码
-      const { data: codeData } = await supabase
-        .from('referral_codes')
-        .select('code')
-        .eq('user_id', user.id)
-        .maybeSingle()
-      if (codeData) setMyCode(codeData.code)
-
-      // 获取邀请人数
-      const { count } = await supabase
-        .from('referrals')
-        .select('*', { count: 'exact', head: true })
-        .eq('referrer_id', user.id)
-      setInviteCount(count || 0)
-
-      // 计算成长等级
-      const c = count || 0
+      const [codeData, countRes] = await Promise.all([
+        supabase.from('referral_codes').select('code').eq('user_id', user.id).maybeSingle(),
+        supabase.from('referrals').select('*', { count: 'exact', head: true }).eq('referrer_id', user.id),
+      ])
+      if (codeData.data) setMyCode(codeData.data.code)
+      const c = countRes.count || 0
+      setInviteCount(c)
       if (c >= 50) setGrowthLevel('legend')
       else if (c >= 20) setGrowthLevel('master')
       else if (c >= 10) setGrowthLevel('expert')
@@ -63,22 +98,18 @@ export default function Profile({ user, setUser }: { user: any; setUser: (u: any
     } catch {}
   }
 
-  const loadAchievements = async () => {
-    if (!user) return
+  const loadAchievements = async (uid: string) => {
     try {
-      const data = await getAchievementProgressList(user.id)
+      const data = await getAchievementProgressList(uid)
       setAchievements(data)
-    } catch {
-      // ignore
-    }
+    } catch {}
   }
 
-  const fetchMyContents = async () => {
-    if (!user) return
+  const fetchMyContents = async (uid: string) => {
     setLoading(true)
     const [memesRes, contentsRes] = await Promise.all([
-      supabase.from('memes').select('*').eq('creator_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('contents').select('*').eq('creator_id', user.id).order('created_at', { ascending: false }),
+      supabase.from('memes').select('*').eq('creator_id', uid).order('created_at', { ascending: false }),
+      supabase.from('contents').select('*').eq('creator_id', uid).order('created_at', { ascending: false }),
     ])
     const memes = (memesRes.data || []).map(m => ({ ...m, _source: 'memes' }))
     const contents = (contentsRes.data || []).map(c => ({ ...c, _source: 'contents' }))
@@ -88,16 +119,28 @@ export default function Profile({ user, setUser }: { user: any; setUser: (u: any
     setLoading(false)
   }
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-    setUser(null)
-    localStorage.removeItem('julang_user')
-    navigate('/login')
+  const handleFollow = async () => {
+    if (!user?.id) { toast.warning('请先登录'); return }
+    if (!profileId) return
+    setFollowLoading(true)
+    try {
+      const result = await toggleFollow(user.id, profileId)
+      setFollowing(result)
+      setFollowCounts(prev => ({
+        ...prev,
+        followers: prev.followers + (result ? 1 : -1),
+      }))
+      toast.success(result ? '已关注' : '已取消关注')
+    } catch (e: any) {
+      toast.error(e.message || '操作失败')
+    } finally {
+      setFollowLoading(false)
+    }
   }
 
   const formatNum = (n: number) => n >= 10000 ? (n / 10000).toFixed(1) + '万' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n)
 
-  if (!user) {
+  if (!user && !profileId) {
     return (
       <div className="bg-white min-h-screen flex flex-col items-center justify-center pb-20">
         <div className="text-4xl mb-4">👤</div>
@@ -107,72 +150,119 @@ export default function Profile({ user, setUser }: { user: any; setUser: (u: any
     )
   }
 
-  const lvl = user.level || 1
+  if (loading || !displayUser) {
+    return <div className="bg-gray-50 min-h-screen flex items-center justify-center text-gray-400">加载中...</div>
+  }
+
+  const lvl = displayUser.level || 1
   const levelTitleText = levelTitle(lvl)
-  const progress = calcLevelProgress(user.experience || 0, lvl)
+  const progress = calcLevelProgress(displayUser.experience || 0, lvl)
   const nextXP = xpForNextLevel(lvl)
 
   return (
     <div className="bg-gray-50 min-h-screen pb-20">
       {/* 头部 */}
       <div className="bg-gradient-to-br from-gray-900 to-gray-700 px-5 pt-12 pb-6 text-white">
+        {/* 返回按钮（查看他人时显示） */}
+        {!isOwnProfile && (
+          <button onClick={() => navigate(-1)} className="text-white/70 mb-3">← 返回</button>
+        )}
+
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center text-3xl">{user.avatar}</div>
-            <div>
+            <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center text-3xl">{displayUser.avatar}</div>
+            <div className="flex-1">
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold">{user.name}</h1>
-                <button onClick={() => navigate('/edit-profile')} className="text-xs bg-white/20 px-2 py-0.5 rounded-full">✏️</button>
+                <h1 className="text-xl font-bold">{displayUser.name}</h1>
+                {isOwnProfile && (
+                  <button onClick={() => navigate('/edit-profile')} className="text-xs bg-white/20 px-2 py-0.5 rounded-full">✏️</button>
+                )}
               </div>
               <div className="flex items-center gap-1">
                 <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">Lv.{lvl}</span>
                 <span className="text-xs text-white/60">{levelTitleText}</span>
               </div>
+              {displayUser.bio && <p className="text-xs text-white/60 mt-1">{displayUser.bio}</p>}
             </div>
           </div>
-          <button onClick={handleLogout} className="text-xs bg-white/10 px-3 py-1.5 rounded-full">退出</button>
+          {isOwnProfile ? (
+            <button onClick={() => navigate('/settings')} className="text-xs bg-white/10 px-3 py-1.5 rounded-full">⚙️</button>
+          ) : (
+            <button
+              onClick={handleFollow}
+              disabled={followLoading}
+              className={`px-4 py-1.5 rounded-full text-sm font-bold transition-all ${
+                following ? 'bg-white/20 text-white' : 'bg-white text-black'
+              }`}
+            >
+              {followLoading ? '...' : following ? '已关注' : '+ 关注'}
+            </button>
+          )}
         </div>
-        <div className="bg-white/10 rounded-xl p-3 mb-4">
-          <div className="flex justify-between text-xs mb-1">
-            <span>{levelTitleText}</span>
-            <span>Lv.{lvl} → Lv.{Math.min(lvl + 1, 100)}</span>
+
+        {/* 关注数据 */}
+        <div className="flex gap-6 mb-4">
+          <div className="text-center">
+            <div className="text-lg font-bold">{followCounts.followers || displayUser.follower_count || 0}</div>
+            <div className="text-[10px] text-white/60">粉丝</div>
           </div>
-          <div className="w-full bg-white/20 rounded-full h-2"><div className="bg-white rounded-full h-2 transition-all" style={{ width: `${Math.min(progress * 100, 100)}%` }}></div></div>
-          <div className="flex justify-between text-[10px] text-white/50 mt-1">
-            <span>{formatXP(user.experience || 0)} XP</span>
-            <span>下级需要 {formatXP(nextXP)} XP</span>
+          <div className="text-center">
+            <div className="text-lg font-bold">{followCounts.following || displayUser.following_count || 0}</div>
+            <div className="text-[10px] text-white/60">关注</div>
+          </div>
+          <div className="text-center">
+            <div className="text-lg font-bold">{myContents.length}</div>
+            <div className="text-[10px] text-white/60">内容</div>
           </div>
         </div>
+
+        {/* 等级进度条（仅自己） */}
+        {isOwnProfile && (
+          <div className="bg-white/10 rounded-xl p-3 mb-4">
+            <div className="flex justify-between text-xs mb-1">
+              <span>{levelTitleText}</span>
+              <span>Lv.{lvl} → Lv.{Math.min(lvl + 1, 100)}</span>
+            </div>
+            <div className="w-full bg-white/20 rounded-full h-2"><div className="bg-white rounded-full h-2 transition-all" style={{ width: `${Math.min(progress * 100, 100)}%` }}></div></div>
+            <div className="flex justify-between text-[10px] text-white/50 mt-1">
+              <span>{formatXP(displayUser.experience || 0)} XP</span>
+              <span>下级需要 {formatXP(nextXP)} XP</span>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-4 gap-3">
           <div className="text-center"><div className="text-lg font-bold">{myContents.length}</div><div className="text-[10px] text-white/60">内容</div></div>
           <div className="text-center"><div className="text-lg font-bold">{formatNum(myContents.reduce((s, m) => s + (m.view_count || 0), 0))}</div><div className="text-[10px] text-white/60">曝光</div></div>
           <div className="text-center"><div className="text-lg font-bold">{formatNum(myContents.reduce((s, m) => s + (m.like_count || 0), 0))}</div><div className="text-[10px] text-white/60">点赞</div></div>
-          <div className="text-center"><div className="text-lg font-bold">{user.points || 0}</div><div className="text-[10px] text-white/60">积分</div></div>
+          <div className="text-center"><div className="text-lg font-bold">{displayUser.points || 0}</div><div className="text-[10px] text-white/60">积分</div></div>
         </div>
       </div>
 
-      {/* 快捷入口 */}
-      <div className="mx-5 mt-4 grid grid-cols-4 gap-3">
-        <button onClick={() => navigate('/points-center')} className="bg-white rounded-xl p-3 text-center border border-gray-100">
-          <div className="text-xl mb-1">💰</div>
-          <div className="text-[10px] text-gray-600">积分中心</div>
-        </button>
-        <button onClick={() => navigate('/invite')} className="bg-white rounded-xl p-3 text-center border border-gray-100">
-          <div className="text-xl mb-1">👥</div>
-          <div className="text-[10px] text-gray-600">邀请好友</div>
-        </button>
-        <button onClick={() => navigate('/checkin')} className="bg-white rounded-xl p-3 text-center border border-gray-100">
-          <div className="text-xl mb-1">📅</div>
-          <div className="text-[10px] text-gray-600">签到</div>
-        </button>
-        <button onClick={() => navigate('/achievements')} className="bg-white rounded-xl p-3 text-center border border-gray-100">
-          <div className="text-xl mb-1">🏆</div>
-          <div className="text-[10px] text-gray-600">成就</div>
-        </button>
-      </div>
+      {/* 快捷入口（仅自己） */}
+      {isOwnProfile && (
+        <div className="mx-5 mt-4 grid grid-cols-4 gap-3">
+          <button onClick={() => navigate('/points-center')} className="bg-white rounded-xl p-3 text-center border border-gray-100">
+            <div className="text-xl mb-1">💰</div>
+            <div className="text-[10px] text-gray-600">积分中心</div>
+          </button>
+          <button onClick={() => navigate('/invite')} className="bg-white rounded-xl p-3 text-center border border-gray-100">
+            <div className="text-xl mb-1">👥</div>
+            <div className="text-[10px] text-gray-600">邀请好友</div>
+          </button>
+          <button onClick={() => navigate('/checkin')} className="bg-white rounded-xl p-3 text-center border border-gray-100">
+            <div className="text-xl mb-1">📅</div>
+            <div className="text-[10px] text-gray-600">签到</div>
+          </button>
+          <button onClick={() => navigate('/achievements')} className="bg-white rounded-xl p-3 text-center border border-gray-100">
+            <div className="text-xl mb-1">🏆</div>
+            <div className="text-[10px] text-gray-600">成就</div>
+          </button>
+        </div>
+      )}
 
-      {/* 邀请码 & 成长等级 */}
-      {myCode && (
+      {/* 邀请码（仅自己） */}
+      {isOwnProfile && myCode && (
         <div className="mx-5 mt-4 bg-white rounded-2xl p-4 border border-gray-100">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
@@ -197,10 +287,10 @@ export default function Profile({ user, setUser }: { user: any; setUser: (u: any
       )}
 
       {/* Tab */}
-      <div className="flex bg-white border-b border-gray-100">
+      <div className="flex bg-white border-b border-gray-100 mt-4">
         {(['memes', 'achievements', 'stats'] as const).map(t => (
           <button key={t} onClick={() => setTab(t)} className={`flex-1 py-3 text-sm font-medium ${tab === t ? 'text-gray-900 border-b-2 border-gray-900' : 'text-gray-400'}`}>
-            {t === 'memes' ? '我的内容' : t === 'achievements' ? '成就' : '数据'}
+            {t === 'memes' ? '内容' : t === 'achievements' ? '成就' : '数据'}
           </button>
         ))}
       </div>
@@ -209,10 +299,10 @@ export default function Profile({ user, setUser }: { user: any; setUser: (u: any
       <div className="px-5 pt-4">
         {tab === 'memes' && (
           loading ? <div className="text-center py-10 text-gray-400">加载中...</div> :
-          myContents.length === 0 ? <div className="text-center py-10 text-gray-400">还没有内容，去发布一个吧</div> :
+          myContents.length === 0 ? <div className="text-center py-10 text-gray-400">{isOwnProfile ? '还没有内容，去发布一个吧' : '还没有发布内容'}</div> :
           <div className="space-y-3">
             {myContents.map(item => (
-              <div key={item.id} className="bg-white rounded-2xl p-4">
+              <div key={item.id} onClick={() => navigate(`/content/${item.id}`)} className="bg-white rounded-2xl p-4 active:bg-gray-50">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="px-2 py-0.5 text-[10px] rounded-full bg-gray-100 text-gray-600">
                     {item._source === 'memes' ? '📝 段子' : `📦 ${item.type}`}
@@ -262,6 +352,7 @@ export default function Profile({ user, setUser }: { user: any; setUser: (u: any
                 <div className="flex justify-between"><span className="text-sm text-gray-500">总曝光</span><span className="text-sm font-bold">{formatNum(myContents.reduce((s, m) => s + (m.view_count || 0), 0))}</span></div>
                 <div className="flex justify-between"><span className="text-sm text-gray-500">总点赞</span><span className="text-sm font-bold">{formatNum(myContents.reduce((s, m) => s + (m.like_count || 0), 0))}</span></div>
                 <div className="flex justify-between"><span className="text-sm text-gray-500">总分享</span><span className="text-sm font-bold">{formatNum(myContents.reduce((s, m) => s + (m.share_count || 0), 0))}</span></div>
+                <div className="flex justify-between"><span className="text-sm text-gray-500">粉丝</span><span className="text-sm font-bold">{followCounts.followers || displayUser.follower_count || 0}</span></div>
               </div>
             </div>
           </div>
