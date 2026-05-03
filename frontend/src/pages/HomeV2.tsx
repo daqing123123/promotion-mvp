@@ -91,6 +91,19 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
       return
     }
 
+    // 获取 memes 的真实评论数
+    const memeIds = newMemes.map(m => m.id)
+    let memeCommentsMap: Record<string, number> = {}
+    if (memeIds.length > 0) {
+      const { data: memeComments } = await supabase
+        .from('comments').select('target_id').eq('target_type', 'meme').in('target_id', memeIds)
+      if (memeComments) {
+        for (const c of memeComments) {
+          memeCommentsMap[c.target_id] = (memeCommentsMap[c.target_id] || 0) + 1
+        }
+      }
+    }
+
     // 获取 contents 的创作者信息
     const contentCreatorIds = [...new Set(newContents.map(c => c.creator_id).filter(Boolean))]
     let usersMap: Record<string, any> = {}
@@ -120,7 +133,7 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
         id: item.id, type: 'content', title: item.title || item.content?.substring(0, 30) || '',
         description: item.content || '', cover: item.image_url || '/placeholder-1.svg', tags: item.hashtags || [],
         creator: { id: item.creator_id || '', name: item.creator_name || u.name || '匿名用户', avatar: item.creator_avatar || u.avatar || '👤', level: u.level || 1 },
-        stats: { views: item.view_count || 0, likes: item.like_count || 0, comments: 0, shares: item.share_count || 0, favorites: 0, promotes: 0 },
+        stats: { views: item.view_count || 0, likes: item.like_count || 0, comments: memeCommentsMap[item.id] || 0, shares: item.share_count || 0, favorites: 0, promotes: 0 },
         renderConfig: { mode: 'card', src: '', detail: {} },
         interactionConfig: { canLike: true, canComment: true, canShare: true, canFavorite: true, canPromote: true, canRemix: false },
         createdAt: item.created_at,

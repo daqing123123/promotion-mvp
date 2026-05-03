@@ -7,18 +7,25 @@ import { supabase, toggleLikeWithPoints, toggleFavorite, promoteContent } from '
 import { checkAndUnlockAchievements } from '../lib/achievements'
 import CommentSheet from './CommentSheet'
 
-export default function FeedControls({ content, user, onMeme }: { content: Content; user: any; onMeme?: () => void }) {
+export default function FeedControls({ content, user, onMeme, onModalToggle }: { content: Content; user: any; onMeme?: () => void; onModalToggle?: (open: boolean) => void }) {
   const [liked, setLiked] = useState(false)
   const [favorited, setFavorited] = useState(false)
   const [showComments, setShowComments] = useState(false)
   const [likeCount, setLikeCount] = useState(content.stats.likes)
+  const [commentCount, setCommentCount] = useState(content.stats.comments)
   const [favCount, setFavCount] = useState(content.stats.favorites)
   const [promoting, setPromoting] = useState(false)
   const [promoted, setPromoted] = useState(false)
+  const [toast, setToast] = useState('')
 
   const targetType = content.type === 'content' ? 'content' : 'meme'
 
-  // 检查当前用户是否已点赞/收藏
+  // 弹窗状态同步到 FeedContainer
+  useEffect(() => {
+    onModalToggle?.(showComments)
+  }, [showComments])
+
+  // 检查当前用户是否已点赞/收藏/帮推
   useEffect(() => {
     if (!user?.id) return
     const checkInteractions = async () => {
@@ -38,15 +45,25 @@ export default function FeedControls({ content, user, onMeme }: { content: Conte
   useEffect(() => {
     setLikeCount(content.stats.likes)
     setFavCount(content.stats.favorites)
-  }, [content.id, content.stats.likes, content.stats.favorites])
+    setCommentCount(content.stats.comments)
+  }, [content.id])
+
+  // Toast 自动消失
+  useEffect(() => {
+    if (toast) {
+      const t = setTimeout(() => setToast(''), 2000)
+      return () => clearTimeout(t)
+    }
+  }, [toast])
 
   const handleLike = async () => {
-    if (!user?.id) return alert('请先登录')
+    if (!user?.id) { setToast('请先登录'); return }
     const prev = liked
     setLiked(!prev)
     setLikeCount(c => c + (prev ? -1 : 1))
     try {
       await toggleLikeWithPoints(targetType, content.id)
+      if (!prev) setToast('+5 积分')
       checkAndUnlockAchievements(user.id).catch(() => {})
     } catch {
       setLiked(prev)
@@ -55,7 +72,7 @@ export default function FeedControls({ content, user, onMeme }: { content: Conte
   }
 
   const handleFavorite = async () => {
-    if (!user?.id) return alert('请先登录')
+    if (!user?.id) { setToast('请先登录'); return }
     const prev = favorited
     setFavorited(!prev)
     setFavCount(c => c + (prev ? -1 : 1))
@@ -68,18 +85,19 @@ export default function FeedControls({ content, user, onMeme }: { content: Conte
   }
 
   const handlePromote = async () => {
-    if (!user?.id) return alert('请先登录')
+    if (!user?.id) { setToast('请先登录'); return }
     if (promoted || promoting) return
     setPromoting(true)
     try {
       await promoteContent(user.id, content.id)
       setPromoted(true)
+      setToast('🔥 帮推成功 +20积分')
       checkAndUnlockAchievements(user.id).catch(() => {})
     } catch (e: any) {
-      if (e.message !== '已经帮推过该内容') {
-        alert(e.message || '帮推失败')
-      } else {
+      if (e.message === '已经帮推过该内容') {
         setPromoted(true)
+      } else {
+        setToast(e.message || '帮推失败')
       }
     } finally {
       setPromoting(false)
@@ -110,7 +128,7 @@ export default function FeedControls({ content, user, onMeme }: { content: Conte
         {/* 评论 */}
         <button onClick={() => setShowComments(true)} className="flex flex-col items-center gap-0.5">
           <span className="text-2xl">💬</span>
-          <span className="text-white text-[11px]">{formatStat(content.stats.comments)}</span>
+          <span className="text-white text-[11px]">{formatStat(commentCount)}</span>
         </button>
 
         {/* 帮推 */}
@@ -132,13 +150,20 @@ export default function FeedControls({ content, user, onMeme }: { content: Conte
             navigator.share({ title: content.title, url })
           } else {
             navigator.clipboard.writeText(url)
-            alert('链接已复制')
+            setToast('链接已复制 ✓')
           }
         }} className="flex flex-col items-center gap-0.5">
           <span className="text-2xl">↗️</span>
           <span className="text-white text-[11px]">{formatStat(content.stats.shares)}</span>
         </button>
       </div>
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[200] bg-white/90 backdrop-blur-sm text-gray-900 text-sm font-medium px-5 py-2.5 rounded-full shadow-lg animate-bounce">
+          {toast}
+        </div>
+      )}
 
       {/* 评论底部弹窗 */}
       {showComments && (
@@ -147,6 +172,7 @@ export default function FeedControls({ content, user, onMeme }: { content: Conte
           source={content.type === 'content' ? 'contents' : 'memes'}
           userId={user?.id}
           onClose={() => setShowComments(false)}
+          onCommentAdded={() => setCommentCount(c => c + 1)}
         />
       )}
     </>

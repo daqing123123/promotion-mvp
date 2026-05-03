@@ -3,14 +3,21 @@
 import { type Content } from '../lib/contentData'
 
 export default function ContentRenderer({ content, isActive: _isActive }: { content: Content; isActive: boolean }) {
-  // 文字类内容：直接显示文字
+  const openLink = (url?: string) => {
+    if (url) window.open(url, '_blank')
+  }
+
+  // 活动卡片
+  const isActivity = content.renderConfig?.detail?.isActivity
+
+  // 文字类内容
   if (content.type === 'article' || content.type === 'content') {
     return (
       <div className="w-full h-full bg-gradient-to-b from-gray-900 to-black flex items-center justify-center px-8">
         <div className="text-center max-w-lg">
-          <div className="text-5xl mb-6">{content.type === 'article' ? '📝' : '💭'}</div>
+          <div className="text-5xl mb-6">{isActivity ? '🎯' : content.type === 'article' ? '📝' : '💭'}</div>
           <h2 className="text-white text-2xl font-bold mb-4 leading-relaxed">{content.title}</h2>
-          <p className="text-white/70 text-base leading-relaxed">{content.description}</p>
+          <p className="text-white/70 text-base leading-relaxed whitespace-pre-line">{content.description}</p>
           {content.tags.length > 0 && (
             <div className="flex flex-wrap justify-center gap-2 mt-6">
               {content.tags.map(tag => (
@@ -18,12 +25,17 @@ export default function ContentRenderer({ content, isActive: _isActive }: { cont
               ))}
             </div>
           )}
+          {isActivity && (
+            <button onClick={() => window.location.href = '/activities'} className="mt-6 px-8 py-3 bg-orange-500 text-white rounded-2xl font-bold text-sm">
+              🎯 去参与活动
+            </button>
+          )}
         </div>
       </div>
     )
   }
 
-  // 软件/Skill/Agent：显示产品卡
+  // 软件/Skill/Agent
   if (content.type === 'software' || content.type === 'skill' || content.type === 'agent') {
     return (
       <div className="w-full h-full bg-gradient-to-b from-gray-900 to-black flex items-center justify-center px-8">
@@ -31,7 +43,7 @@ export default function ContentRenderer({ content, isActive: _isActive }: { cont
           <div className="text-6xl mb-4">{content.type === 'skill' ? '🧠' : content.type === 'agent' ? '🤖' : '💻'}</div>
           <h2 className="text-white text-xl font-bold mb-2">{content.title}</h2>
           <p className="text-white/60 text-sm mb-6">{content.description}</p>
-          <button className="w-full py-3 bg-white text-black rounded-2xl font-bold text-sm">
+          <button onClick={() => openLink(content.renderConfig?.detail?.link)} className="w-full py-3 bg-white text-black rounded-2xl font-bold text-sm">
             {content.type === 'skill' ? '安装 Skill' : content.type === 'agent' ? '开始对话' : '免费试用'}
           </button>
           <div className="flex justify-center gap-6 mt-4 text-white/40 text-xs">
@@ -43,20 +55,22 @@ export default function ContentRenderer({ content, isActive: _isActive }: { cont
     )
   }
 
-  // 产品：显示产品卡
+  // 产品
   if (content.type === 'product') {
     return (
       <div className="w-full h-full bg-gradient-to-b from-gray-900 to-black flex items-center justify-center px-8">
         <div className="bg-white/10 backdrop-blur-xl rounded-3xl p-8 max-w-sm w-full text-center">
-          <div className="w-32 h-32 mx-auto mb-4 bg-white/10 rounded-2xl flex items-center justify-center text-6xl">📦</div>
+          {content.cover && content.cover !== '/placeholder-1.svg' ? (
+            <img src={content.cover} alt={content.title} className="w-32 h-32 mx-auto mb-4 rounded-2xl object-cover" />
+          ) : (
+            <div className="w-32 h-32 mx-auto mb-4 bg-white/10 rounded-2xl flex items-center justify-center text-6xl">📦</div>
+          )}
           <h2 className="text-white text-xl font-bold mb-2">{content.title}</h2>
           <p className="text-white/60 text-sm mb-4">{content.description}</p>
-          <div className="flex gap-2 justify-center mb-4">
-            {content.renderConfig?.detail?.price && (
-              <span className="text-orange-400 text-lg font-bold">{content.renderConfig.detail.price}</span>
-            )}
-          </div>
-          <button className="w-full py-3 bg-orange-500 text-white rounded-2xl font-bold text-sm">
+          {content.renderConfig?.detail?.price && (
+            <span className="text-orange-400 text-lg font-bold mb-4 block">{content.renderConfig.detail.price}</span>
+          )}
+          <button onClick={() => openLink(content.renderConfig?.detail?.link)} className="w-full py-3 bg-orange-500 text-white rounded-2xl font-bold text-sm">
             {content.renderConfig?.detail?.link ? '去看看' : '了解更多'}
           </button>
         </div>
@@ -64,7 +78,7 @@ export default function ContentRenderer({ content, isActive: _isActive }: { cont
     )
   }
 
-  // 游戏：显示游戏卡
+  // 游戏
   if (content.type === 'game') {
     return (
       <div className="w-full h-full bg-gradient-to-b from-gray-900 to-black flex items-center justify-center px-8">
@@ -72,7 +86,7 @@ export default function ContentRenderer({ content, isActive: _isActive }: { cont
           <div className="text-6xl mb-4">🎮</div>
           <h2 className="text-white text-xl font-bold mb-2">{content.title}</h2>
           <p className="text-white/60 text-sm mb-6">{content.description}</p>
-          <button className="w-full py-3 bg-purple-600 text-white rounded-2xl font-bold text-sm">开始玩</button>
+          <button onClick={() => openLink(content.renderConfig?.detail?.link)} className="w-full py-3 bg-purple-600 text-white rounded-2xl font-bold text-sm">开始玩</button>
           <div className="flex justify-center gap-6 mt-4 text-white/40 text-xs">
             <span>❤️ {formatNum(content.stats.likes)}</span>
             <span>👁 {formatNum(content.stats.views)}</span>
@@ -82,7 +96,7 @@ export default function ContentRenderer({ content, isActive: _isActive }: { cont
     )
   }
 
-  // 影视/音乐/短剧：显示播放卡
+  // 影视/音乐/短剧
   if (content.type === 'movie' || content.type === 'music' || content.type === 'drama') {
     return (
       <div className="w-full h-full bg-gradient-to-b from-gray-900 to-black flex items-center justify-center px-8">
@@ -90,7 +104,7 @@ export default function ContentRenderer({ content, isActive: _isActive }: { cont
           <div className="text-6xl mb-4">{content.type === 'music' ? '🎵' : content.type === 'movie' ? '🎬' : '🎭'}</div>
           <h2 className="text-white text-xl font-bold mb-2">{content.title}</h2>
           <p className="text-white/60 text-sm mb-6">{content.description}</p>
-          <button className="w-16 h-16 mx-auto bg-white/20 rounded-full flex items-center justify-center mb-4">
+          <button onClick={() => openLink(content.renderConfig?.detail?.link)} className="w-16 h-16 mx-auto bg-white/20 rounded-full flex items-center justify-center mb-4">
             <div className="w-0 h-0 border-l-[20px] border-l-white border-y-[12px] border-y-transparent ml-2" />
           </button>
           <div className="flex justify-center gap-6 text-white/40 text-xs">
@@ -102,24 +116,18 @@ export default function ContentRenderer({ content, isActive: _isActive }: { cont
     )
   }
 
-  // 默认：图片/视频（用 cover）
+  // 默认：图片/视频
   return (
     <div className="w-full h-full relative bg-black">
-      {content.cover ? (
+      {content.cover && content.cover !== '/placeholder-1.svg' ? (
         <img
           src={content.cover}
           alt={content.title}
           className="w-full h-full object-cover"
-          onError={(e) => {
-            // 图片加载失败时显示渐变背景
-            const target = e.target as HTMLImageElement
-            target.style.display = 'none'
-          }}
+          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
         />
       ) : null}
-      {/* 渐变遮罩 */}
       <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-      {/* 视频播放按钮 */}
       {content.type === 'video' && (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="w-20 h-20 bg-white/30 rounded-full flex items-center justify-center backdrop-blur-sm">

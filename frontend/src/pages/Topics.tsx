@@ -131,11 +131,12 @@ export default function Topics() {
               <div className="text-center"><div className="text-sm font-bold text-gray-900">{topic.meme_count}</div><div className="text-[10px] text-gray-400">梗</div></div>
               <div className="text-center"><div className="text-sm font-bold text-gray-900">{formatNum(topic.total_views)}</div><div className="text-[10px] text-gray-400">曝光</div></div>
               <div className="text-center"><div className="text-sm font-bold text-gray-900">{topic.participant_count}</div><div className="text-[10px] text-gray-400">参与</div></div>
-              <div className="text-center"><div className="text-sm font-bold text-orange-500">{topic.hot_score}</div><div className="text-[10px] text-gray-400">热度</div></div>
+              <div className="text-center"><div className="text-sm font-bold text-orange-500">{topic.promote_count || topic.hot_score}</div><div className="text-[10px] text-gray-400">{topic.brand_name ? '帮推' : '热度'}</div></div>
             </div>
-            {topic.reward_pool > 0 && (
+            {(topic.reward_pool > 0 || topic.brand_name) && (
               <div className="mt-3 pt-3 border-t border-gray-50 flex items-center justify-between">
-                <span className="text-xs text-gray-400">💰 {topic.reward_pool} 积分</span>
+                {topic.reward_pool > 0 && <span className="text-xs text-gray-400">💰 {topic.reward_pool} 积分</span>}
+                {topic.brand_name && topic.promote_reward > 0 && <span className="text-xs text-blue-500">🔥 帮推 +{topic.promote_reward}积分</span>}
                 <span className="text-xs text-gray-400">{topic.creator_type === 'brand' ? '品牌发起' : '个人发起'}</span>
               </div>
             )}

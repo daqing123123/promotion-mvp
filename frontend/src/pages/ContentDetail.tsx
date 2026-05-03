@@ -39,6 +39,11 @@ export default function ContentDetail({ user }: { user?: any }) {
     if (data) {
       setContent({ ...data, _source: source })
 
+      // 浏览量 +1（异步，不阻塞）
+      const table = source === 'memes' ? 'memes' : 'contents'
+      const countField = source === 'memes' ? 'view_count' : 'view_count'
+      supabase.from(table).update({ [countField]: (data.view_count || 0) + 1 }).eq('id', data.id).then(() => {})
+
       // 加载评论
       const { data: cmts } = await supabase
         .from('comments')

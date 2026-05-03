@@ -6,12 +6,13 @@ import { checkAndUnlockAchievements } from '../lib/achievements'
 
 interface CommentSheetProps {
   contentId: string
-  source: 'memes' | 'contents'
+  source: 'memes' | 'contents' | 'topic'
   userId?: string
   onClose: () => void
+  onCommentAdded?: () => void
 }
 
-export default function CommentSheet({ contentId, source, userId, onClose }: CommentSheetProps) {
+export default function CommentSheet({ contentId, source, userId, onClose, onCommentAdded }: CommentSheetProps) {
   const [comments, setComments] = useState<any[]>([])
   const [newComment, setNewComment] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -21,18 +22,40 @@ export default function CommentSheet({ contentId, source, userId, onClose }: Com
 
   useEffect(() => {
     loadComments()
-    // 自动聚焦输入框
     setTimeout(() => inputRef.current?.focus(), 300)
   }, [])
 
-  // 点击遮罩关闭
+  // 阻止触摸/滚轮事件冒泡到底层 FeedContainer
+  useEffect(() => {
+    const stop = (e: Event) => e.stopPropagation()
+    const el = sheetRef.current
+    if (el) {
+      el.addEventListener('touchstart', stop, { passive: false })
+      el.addEventListener('touchmove', stop, { passive: false })
+      el.addEventListener('touchend', stop, { passive: false })
+      el.addEventListener('wheel', stop, { passive: false })
+    }
+    return () => {
+      if (el) {
+        el.removeEventListener('touchstart', stop)
+        el.removeEventListener('touchmove', stop)
+        el.removeEventListener('touchend', stop)
+        el.removeEventListener('wheel', stop)
+      }
+    }
+  }, [])
+
   const handleBackdropClick = (e: React.MouseEvent) => {
     if (e.target === sheetRef.current) onClose()
   }
 
   const loadComments = async () => {
     setLoading(true)
-    const targetType = source === 'memes' ? 'meme' : 'content'
+    let targetType: string
+    if (source === 'memes') targetType = 'meme'
+    else if (source === 'topic') targetType = 'topic'
+    else targetType = 'content'
+
     const { data: cmts } = await supabase
       .from('comments')
       .select('*')
@@ -41,7 +64,6 @@ export default function CommentSheet({ contentId, source, userId, onClose }: Com
       .order('created_at', { ascending: false })
       .limit(50)
 
-    // 获取评论者信息
     const userIds = [...new Set((cmts || []).map(c => c.user_id).filter(Boolean))]
     let usersMap: Record<string, any> = {}
     if (userIds.length > 0) {
@@ -49,12 +71,11 @@ export default function CommentSheet({ contentId, source, userId, onClose }: Com
       if (usersData) usersMap = Object.fromEntries(usersData.map(u => [u.id, u]))
     }
 
-    const commentsWithUser = (cmts || []).map(c => ({
+    setComments((cmts || []).map(c => ({
       ...c,
       user_name: usersMap[c.user_id]?.name || '匿名用户',
       user_avatar: usersMap[c.user_id]?.avatar || '👤',
-    }))
-    setComments(commentsWithUser)
+    })))
     setLoading(false)
   }
 
@@ -62,7 +83,6 @@ export default function CommentSheet({ contentId, source, userId, onClose }: Com
     if (!newComment.trim() || submitting) return
     setSubmitting(true)
 
-    // 获取当前用户 — 优先用 prop，否则用 auth
     let uid = userId
     if (!uid) {
       const { data: { user: authUser } } = await supabase.auth.getUser()
@@ -77,13 +97,19 @@ export default function CommentSheet({ contentId, source, userId, onClose }: Com
     const { data: userInfo } = await supabase.from('users').select('name, avatar').eq('id', uid).single()
 
     try {
-      const inserted = await addCommentWithPoints(source === 'memes' ? 'meme' : 'content', contentId, newComment.trim())
+      let targetType: string
+      if (source === 'memes') targetType = 'meme'
+      else if (source === 'topic') targetType = 'topic'
+      else targetType = 'content'
+
+      const inserted = await addCommentWithPoints(targetType, contentId, newComment.trim())
       setComments([{
         ...inserted,
         user_name: userInfo?.name || '匿名用户',
         user_avatar: userInfo?.avatar || '👤',
       }, ...comments])
       setNewComment('')
+      onCommentAdded?.()
       if (uid) checkAndUnlockAchievements(uid).catch(() => {})
     } catch (e: any) {
       alert(e.message || '评论失败')
@@ -104,17 +130,12 @@ export default function CommentSheet({ contentId, source, userId, onClose }: Com
       className="fixed inset-0 z-[100] flex items-end"
       onClick={handleBackdropClick}
     >
-      {/* 遮罩 */}
-      <div className="absolute inset-0 bg-black/50" />
-
-      {/* 弹窗主体 */}
-      <div className="relative w-full bg-white rounded-t-3xl max-h-[70vh] flex flex-col animate-slide-up">
-        {/* 拖拽条 */}
+      <div className="absolute inset-0 bg-black/50" onClick={(e) => { e.stopPropagation(); onClose() }} />
+      <div className="relative w-full bg-white rounded-t-3xl max-h-[70vh] flex flex-col animate-slide-up" onClick={e => e.stopPropagation()}>
         <div className="flex justify-center py-3">
           <div className="w-10 h-1 bg-gray-300 rounded-full" />
         </div>
 
-        {/* 标题 */}
         <div className="px-5 pb-3 border-b border-gray-100">
           <div className="flex items-center justify-between">
             <h3 className="text-base font-bold">💬 评论 ({comments.length})</h3>
@@ -122,7 +143,6 @@ export default function CommentSheet({ contentId, source, userId, onClose }: Com
           </div>
         </div>
 
-        {/* 评论列表 */}
         <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3" style={{ maxHeight: 'calc(70vh - 160px)' }}>
           {loading ? (
             <div className="text-center py-8 text-gray-400 text-sm">加载中...</div>
@@ -146,7 +166,6 @@ export default function CommentSheet({ contentId, source, userId, onClose }: Com
           )}
         </div>
 
-        {/* 输入框 */}
         <div className="border-t border-gray-100 px-5 py-3 bg-white">
           <div className="flex items-end gap-2">
             <textarea
