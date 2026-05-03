@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { fetchTasks, joinTaskById, fetchUserTasks, autoCheckTaskCompletion, Task, TaskParticipant } from '../lib/tasks'
 import { earnPoints } from '../lib/supabase/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
+import { toast } from '../lib/toast'
 
 interface TasksProps {
   user: any
@@ -54,7 +55,6 @@ export default function Tasks({ user, setUser }: TasksProps) {
         const completed = await autoCheckTaskCompletion(user.id)
         if (completed && completed.length > 0) {
           await loadMyTasks()
-          // 检查成就
           await checkAndUnlockAchievements(user.id)
         }
       } catch {
@@ -66,7 +66,7 @@ export default function Tasks({ user, setUser }: TasksProps) {
 
   const handleJoin = async (taskId: string) => {
     if (!user) {
-      alert('请先登录')
+      toast.warning('请先登录')
       return
     }
 
@@ -74,7 +74,6 @@ export default function Tasks({ user, setUser }: TasksProps) {
     try {
       await joinTaskById(taskId, user.id)
 
-      // 参与任务获得积分
       try {
         const result = await earnPoints(user.id, 10, 'task', '参与任务获得积分')
         if (setUser && result.points !== undefined) {
@@ -86,8 +85,9 @@ export default function Tasks({ user, setUser }: TasksProps) {
 
       setJoinedIds(prev => new Set([...prev, taskId]))
       await loadMyTasks()
+      toast.success('参与成功！')
     } catch (err: any) {
-      alert(err.message || '参与失败')
+      toast.error(err.message || '参与失败')
     } finally {
       setJoining(null)
     }
@@ -95,9 +95,9 @@ export default function Tasks({ user, setUser }: TasksProps) {
 
   const getTaskIcon = (task: Task) => {
     if (task.title.includes('签到')) return '📅'
-    if (task.title.includes('发布')) return '📝'
+    if (task.title.includes('发布')) return '🎭'
     if (task.title.includes('点赞')) return '❤️'
-    if (task.title.includes('帮推')) return '🚀'
+    if (task.title.includes('帮推')) return '🔥'
     if (task.title.includes('评论')) return '💬'
     if (task.type === 'promote') return '📢'
     if (task.type === 'create') return '✍️'
@@ -121,10 +121,7 @@ export default function Tasks({ user, setUser }: TasksProps) {
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-bold text-white">任务广场</h1>
           {user && (
-            <button
-              onClick={() => setActiveTab('my')}
-              className="text-sm text-primary"
-            >
+            <button onClick={() => setActiveTab('my')} className="text-sm text-purple-400">
               我的任务
             </button>
           )}
@@ -136,7 +133,7 @@ export default function Tasks({ user, setUser }: TasksProps) {
         <div className="flex gap-3 scrollbar-hide">
           {[
             { key: 'daily' as const, label: '🎯 每日任务' },
-            { key: 'promote' as const, label: '🚀 帮推任务' },
+            { key: 'promote' as const, label: '🔥 帮推任务' },
             { key: 'create' as const, label: '✍️ 创作任务' },
             { key: 'challenge' as const, label: '🏆 挑战任务' },
             { key: 'my' as const, label: '📋 我的任务' },
@@ -165,7 +162,7 @@ export default function Tasks({ user, setUser }: TasksProps) {
 
         {activeTab === 'promote' && (
           <div className="bg-gradient-to-r from-green-500/20 to-teal-500/20 rounded-xl p-4 mb-4">
-            <h3 className="text-white font-bold mb-2">🚀 帮推任务</h3>
+            <h3 className="text-white font-bold mb-2">🔥 帮推任务</h3>
             <p className="text-white/60 text-sm">帮推指定内容获得额外积分奖励</p>
           </div>
         )}
@@ -209,7 +206,7 @@ export default function Tasks({ user, setUser }: TasksProps) {
                         {getTaskTypeLabel(task.type)} · {task.current_participants}人参与
                       </div>
                     </div>
-                    <span className="text-primary font-bold">+{task.reward_points}积分</span>
+                    <span className="text-purple-400 font-bold">+{task.reward_points}积分</span>
                   </div>
 
                   {task.description && (
@@ -270,9 +267,9 @@ export default function Tasks({ user, setUser }: TasksProps) {
                   </div>
 
                   <div className="flex items-center justify-between text-xs text-white/40">
-                    <span>奖励：+{task.reward_points}积分</span>
+                    <span>奖励：{task.reward_points}积分</span>
                     {participant.status === 'completed' && (
-                      <span className="text-green-400">✓ 已获得奖励</span>
+                      <span className="text-green-400">✅ 已获得奖励</span>
                     )}
                   </div>
                 </div>

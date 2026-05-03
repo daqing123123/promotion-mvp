@@ -1,6 +1,9 @@
+// ===== 签到页面 =====
+
 import { useState, useEffect, useCallback } from 'react'
 import { checkIn as checkInDB, getTodaySignIn, getConsecutiveDays, getSignInHistory } from '../lib/supabase/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
+import { toast } from '../lib/toast'
 
 interface CheckInProps {
   user: any
@@ -49,29 +52,24 @@ export default function CheckIn({ user, setUser }: CheckInProps) {
       setRewardInfo({ points: result.pointsEarned, bonus: result.bonusPoints })
       setShowReward(true)
 
-      // 更新用户积分
       if (setUser && result.points !== undefined) {
         setUser((prev: any) => prev ? { ...prev, points: result.points } : prev)
       }
 
-      // 检查成就解锁
       const unlocked = await checkAndUnlockAchievements(user.id)
       if (unlocked.length > 0) {
         setNewAchievements(unlocked)
       }
 
-      // 刷新签到历史
       await loadSignInData()
-
       setTimeout(() => setShowReward(false), 3000)
     } catch (err: any) {
-      alert(err.message || '签到失败')
+      toast.error(err.message || '签到失败')
     } finally {
       setLoading(false)
     }
   }
 
-  // 生成日历数据
   const now = new Date()
   const year = now.getFullYear()
   const month = now.getMonth()
@@ -82,7 +80,7 @@ export default function CheckIn({ user, setUser }: CheckInProps) {
   const signedDates = new Set(
     signInHistory.map((s: any) => {
       const d = new Date(s.sign_date)
-      return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
     })
   )
 
@@ -96,7 +94,7 @@ export default function CheckIn({ user, setUser }: CheckInProps) {
 
       <div className="p-4">
         {/* 签到卡片 */}
-        <div className="bg-gradient-to-r from-primary to-secondary rounded-2xl p-6 mb-4">
+        <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-2xl p-6 mb-4">
           <div className="flex items-center justify-between mb-4">
             <div>
               <div className="text-white/80 text-sm">连续签到</div>
@@ -118,23 +116,23 @@ export default function CheckIn({ user, setUser }: CheckInProps) {
                   : 'bg-white text-black active:scale-[0.98]'
             }`}
           >
-            {loading ? '签到中...' : isCheckedToday ? '✓ 今日已签到' : '签到 +10积分'}
+            {loading ? '签到中...' : isCheckedToday ? '✅ 今日已签到' : '签到 +10积分'}
           </button>
         </div>
 
         {/* 连续签到奖励提示 */}
         <div className="bg-white/5 rounded-xl p-4 mb-4">
-          <h3 className="text-white font-bold mb-3">🎁 连续签到奖励</h3>
+          <h3 className="text-white font-bold mb-3">💰 连续签到奖励</h3>
           <div className="space-y-2">
             {[
-              { days: 3, reward: '+20积分', icon: '🌿', active: consecutiveDays >= 3 },
-              { days: 7, reward: '+50积分', icon: '🌳', active: consecutiveDays >= 7 },
-              { days: 30, reward: '+200积分', icon: '👑', active: consecutiveDays >= 30 },
+              { days: 3, reward: '+20积分', icon: '🥉', active: consecutiveDays >= 3 },
+              { days: 7, reward: '+50积分', icon: '🥈', active: consecutiveDays >= 7 },
+              { days: 30, reward: '+200积分', icon: '🥇', active: consecutiveDays >= 30 },
             ].map(item => (
               <div
                 key={item.days}
                 className={`flex items-center gap-3 p-3 rounded-xl ${
-                  item.active ? 'bg-primary/10 border border-primary/20' : 'bg-white/5'
+                  item.active ? 'bg-purple-500/10 border border-purple-500/20' : 'bg-white/5'
                 }`}
               >
                 <span className="text-2xl">{item.icon}</span>
@@ -142,11 +140,9 @@ export default function CheckIn({ user, setUser }: CheckInProps) {
                   <div className="text-sm text-white">连续签到 {item.days} 天</div>
                   <div className="text-xs text-white/40">{item.reward}</div>
                 </div>
-                {item.active && <span className="text-xs text-primary">✓ 已达成</span>}
+                {item.active && <span className="text-xs text-purple-400">✅ 已达成</span>}
                 {!item.active && (
-                  <div className="text-xs text-white/40">
-                    {consecutiveDays}/{item.days}
-                  </div>
+                  <div className="text-xs text-white/40">{consecutiveDays}/{item.days}</div>
                 )}
               </div>
             ))}
@@ -174,15 +170,15 @@ export default function CheckIn({ user, setUser }: CheckInProps) {
             ))}
             {Array.from({ length: daysInMonth }, (_, i) => {
               const day = i + 1
-              const dateKey = `${year}-${month}-${day}`
+              const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
               const isChecked = signedDates.has(dateKey)
               const isToday = day === today
               return (
                 <div
                   key={day}
                   className={`aspect-square rounded-lg flex items-center justify-center text-sm ${
-                    isToday ? 'bg-primary text-white font-bold' :
-                    isChecked ? 'bg-primary/20 text-primary' :
+                    isToday ? 'bg-purple-600 text-white font-bold' :
+                    isChecked ? 'bg-purple-600/20 text-purple-400' :
                     'bg-white/5 text-white/40'
                   }`}
                 >
@@ -196,12 +192,12 @@ export default function CheckIn({ user, setUser }: CheckInProps) {
         {/* 签到历史 */}
         {signInHistory.length > 0 && (
           <div className="bg-white/5 rounded-xl p-4">
-            <h3 className="text-white font-bold mb-3">📝 签到记录</h3>
+            <h3 className="text-white font-bold mb-3">📋 签到记录</h3>
             <div className="space-y-2 max-h-48 overflow-y-auto">
               {signInHistory.slice(0, 10).map((record: any) => (
                 <div key={record.id} className="flex items-center justify-between text-sm">
                   <span className="text-white/60">{record.sign_date}</span>
-                  <span className="text-primary">+{record.points_earned}积分</span>
+                  <span className="text-purple-400">+{record.points_earned}积分</span>
                 </div>
               ))}
             </div>
@@ -217,7 +213,7 @@ export default function CheckIn({ user, setUser }: CheckInProps) {
             <h3 className="text-2xl font-bold text-gray-900 mb-2">签到成功！</h3>
             <p className="text-gray-600 mb-1">获得 +{rewardInfo.points - rewardInfo.bonus} 积分</p>
             {rewardInfo.bonus > 0 && (
-              <p className="text-primary font-bold">连续签到额外 +{rewardInfo.bonus} 积分</p>
+              <p className="text-purple-600 font-bold">连续签到额外 +{rewardInfo.bonus} 积分</p>
             )}
             <p className="text-sm text-gray-400 mt-2">连续签到 {consecutiveDays} 天</p>
           </div>

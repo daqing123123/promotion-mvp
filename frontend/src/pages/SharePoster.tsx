@@ -1,4 +1,7 @@
+// ===== 分享海报组件 =====
+
 import { useState } from 'react'
+import { toast } from '../lib/toast'
 
 interface SharePosterProps {
   contentId: string
@@ -10,8 +13,8 @@ export default function SharePoster({ contentId, onClose }: SharePosterProps) {
 
   const content = {
     id: contentId,
-    title: '夏日穿搭挑战！这个搭配太绝了！',
-    creator: { name: '时尚达人小美', avatar: '👗' },
+    title: '夏日穿搭挑战！这个搭配太绝了',
+    creator: { name: '时尚达人小美', avatar: '👩' },
     stats: { views: 12345, likes: 890, recommends: 123 },
     tags: ['穿搭', '夏日', '时尚'],
   }
@@ -20,18 +23,18 @@ export default function SharePoster({ contentId, onClose }: SharePosterProps) {
     setDownloading(true)
     setTimeout(() => {
       setDownloading(false)
-      alert('海报已保存到相册')
+      toast.success('海报已保存')
     }, 1000)
   }
 
   const handleShare = (platform: string) => {
-    alert(`已分享到${platform}`)
+    toast.info(`分享到${platform}`)
   }
 
   return (
     <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden">
-        <div className="bg-gradient-to-br from-primary to-secondary p-6">
+        <div className="bg-gradient-to-br from-purple-600 to-blue-600 p-6">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center text-2xl">{content.creator.avatar}</div>
             <div>
@@ -56,8 +59,8 @@ export default function SharePoster({ contentId, onClose }: SharePosterProps) {
         <div className="p-6">
           <div className="text-center mb-6">
             <div className="flex items-center justify-center gap-2 mb-2">
-              <div className="w-8 h-8 bg-gradient-to-r from-primary to-secondary rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-sm">巨</span>
+              <div className="w-8 h-8 bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg flex items-center justify-center">
+                <span className="text-white font-bold text-sm">浪</span>
               </div>
               <span className="text-xl font-bold text-gray-900">巨浪</span>
             </div>
@@ -74,7 +77,7 @@ export default function SharePoster({ contentId, onClose }: SharePosterProps) {
           </div>
 
           <div className="flex gap-3 mb-4">
-            <button onClick={handleDownload} disabled={downloading} className="flex-1 py-3 bg-primary text-white rounded-xl font-bold disabled:opacity-50">
+            <button onClick={handleDownload} disabled={downloading} className="flex-1 py-3 bg-purple-600 text-white rounded-xl font-bold disabled:opacity-50">
               {downloading ? '保存中...' : '保存海报'}
             </button>
             <button onClick={onClose} className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium">
@@ -93,7 +96,7 @@ export default function SharePoster({ contentId, onClose }: SharePosterProps) {
               <span className="text-xs text-gray-600">朋友圈</span>
             </button>
             <button onClick={() => handleShare('小红书')} className="flex flex-col items-center gap-2">
-              <div className="w-12 h-12 bg-red-500 rounded-xl flex items-center justify-center text-white text-xl">📌</div>
+              <div className="w-12 h-12 bg-red-500 rounded-xl flex items-center justify-center text-white text-xl">📕</div>
               <span className="text-xs text-gray-600">小红书</span>
             </button>
             <button onClick={() => handleShare('抖音')} className="flex flex-col items-center gap-2">

@@ -1,5 +1,9 @@
+// ===== 活动中心 =====
+
 import { useState, useEffect } from 'react'
-import { supabase } from '../lib/supabase/client'
+import { useNavigate } from 'react-router-dom'
+import { supabase, joinActivity } from '../lib/supabase/client'
+import { toast } from '../lib/toast'
 
 interface ActivitiesProps {
   user?: any
@@ -17,13 +21,20 @@ interface Activity {
   status: string
 }
 
-export default function Activities({ user: _user, setUser: _setUser }: ActivitiesProps) {
+export default function Activities({ user, setUser: _setUser }: ActivitiesProps) {
+  const navigate = useNavigate()
   const [activities, setActivities] = useState<Activity[]>([])
+  const [joinedIds, setJoinedIds] = useState<Set<string>>(new Set())
+  const [joining, setJoining] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     fetchActivities()
   }, [])
+
+  useEffect(() => {
+    if (user?.id) loadJoinedIds()
+  }, [user?.id])
 
   const fetchActivities = async () => {
     setLoading(true)
@@ -39,9 +50,44 @@ export default function Activities({ user: _user, setUser: _setUser }: Activitie
     setLoading(false)
   }
 
+  const loadJoinedIds = async () => {
+    if (!user?.id) return
+    const { data } = await supabase
+      .from('activity_participants')
+      .select('activity_id')
+      .eq('user_id', user.id)
+    if (data) {
+      setJoinedIds(new Set(data.map(d => d.activity_id)))
+    }
+  }
+
+  const handleJoin = async (activityId: string) => {
+    if (!user?.id) {
+      navigate('/login')
+      return
+    }
+    if (joinedIds.has(activityId) || joining) return
+
+    setJoining(activityId)
+    try {
+      await joinActivity(activityId, user.id)
+      setJoinedIds(prev => new Set([...prev, activityId]))
+      setActivities(prev => prev.map(a =>
+        a.id === activityId
+          ? { ...a, participant_count: a.participant_count + 1 }
+          : a
+      ))
+      toast.success('参与成功！+10积分')
+    } catch (e: any) {
+      toast.error(e.message || '参与失败')
+    } finally {
+      setJoining(null)
+    }
+  }
+
   const typeIcons: Record<string, string> = {
-    promote: '🔄',
-    create: '✏️',
+    promote: '📢',
+    create: '✍️',
     vote: '🗳️',
     trial: '📦',
   }
@@ -76,13 +122,23 @@ export default function Activities({ user: _user, setUser: _setUser }: Activitie
                   <h3 className="font-medium text-sm">{a.title}</h3>
                   <p className="text-xs text-gray-500 mt-1 line-clamp-2">{a.description}</p>
                   <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
-                    <span>🎁 {a.reward} 积分</span>
+                    <span>💰 {a.reward} 积分</span>
                     <span>👥 {a.participant_count} 人参与</span>
                     {a.end_date && <span>⏰ 截止 {new Date(a.end_date).toLocaleDateString()}</span>}
                   </div>
                 </div>
-                <button className="bg-blue-500 text-white text-xs px-3 py-1.5 rounded-full shrink-0">
-                  参与
+                <button
+                  onClick={() => handleJoin(a.id)}
+                  disabled={joinedIds.has(a.id) || joining === a.id}
+                  className={`text-xs px-3 py-1.5 rounded-full shrink-0 ${
+                    joinedIds.has(a.id)
+                      ? 'bg-gray-200 text-gray-500'
+                      : joining === a.id
+                        ? 'bg-blue-300 text-white'
+                        : 'bg-blue-500 text-white'
+                  }`}
+                >
+                  {joinedIds.has(a.id) ? '已参与' : joining === a.id ? '...' : '参与'}
                 </button>
               </div>
             </div>

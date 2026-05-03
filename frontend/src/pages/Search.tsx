@@ -1,10 +1,8 @@
-// ===== 搜索页面 =====
+// ===== 搜索页面（真实数据版） =====
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { makeContentFeedBatch } from '../lib/mockDataV2'
-import { MOCK_TOPICS, getTopicTypeConfig, getStatusConfig as _getStatusConfig, formatTopicStats } from '../lib/topicSystem'
-import { MOCK_MEMES, formatStat, getStatusColor, getStatusLabel } from '../lib/memeSystem'
+import { supabase } from '../lib/supabase/client'
 
 type SearchTab = 'all' | 'content' | 'topic' | 'meme'
 
@@ -13,23 +11,41 @@ export default function Search() {
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState<SearchTab>('all')
   const [searched, setSearched] = useState(false)
+  const [contentResults, setContentResults] = useState<any[]>([])
+  const [topicResults, setTopicResults] = useState<any[]>([])
+  const [memeResults, setMemeResults] = useState<any[]>([])
+  const [hotTopics, setHotTopics] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
 
-  const doSearch = () => {
-    if (!query.trim()) return
-    setSearched(true)
+  useEffect(() => {
+    loadHotTopics()
+  }, [])
+
+  const loadHotTopics = async () => {
+    const { data } = await supabase
+      .from('topics')
+      .select('id, title, type, description, participant_count, meme_count')
+      .eq('status', 'active')
+      .order('hot_score', { ascending: false })
+      .limit(3)
+    if (data) setHotTopics(data)
   }
 
-  // 模拟搜索结果
-  const allContent = makeContentFeedBatch(10)
-  const contentResults = allContent.filter((c: any) =>
-    c.title.includes(query) || c.description.includes(query) || c.tags.some((t: string) => t.includes(query))
-  )
-  const topicResults = MOCK_TOPICS.filter((t: any) =>
-    t.title.includes(query) || t.description.includes(query)
-  )
-  const memeResults = MOCK_MEMES.filter((m: any) =>
-    m.title.includes(query) || m.content.includes(query) || m.hashtags.some((h: string) => h.includes(query))
-  )
+  const doSearch = async () => {
+    if (!query.trim()) return
+    setSearched(true)
+    setLoading(true)
+    const q = `%${query.trim()}%`
+    const [cRes, tRes, mRes] = await Promise.all([
+      supabase.from('contents').select('id, type, title, description').ilike('title', q).limit(10),
+      supabase.from('topics').select('id, title, type, description, participant_count, meme_count').ilike('title', q).limit(10),
+      supabase.from('memes').select('id, title, content, like_count, view_count').ilike('title', q).limit(10),
+    ])
+    setContentResults(cRes.data || [])
+    setTopicResults(tRes.data || [])
+    setMemeResults(mRes.data || [])
+    setLoading(false)
+  }
 
   const hasResults = contentResults.length > 0 || topicResults.length > 0 || memeResults.length > 0
 
@@ -91,7 +107,7 @@ export default function Search() {
               {['国产平替', '独立音乐', '古装剧', '10元挑战', '社区英雄', '宇宙探索'].map(tag => (
                 <button
                   key={tag}
-                  onClick={() => { setQuery(tag); setSearched(true) }}
+                  onClick={() => { setQuery(tag); doSearch() }}
                   className="px-3 py-1.5 bg-white border border-gray-200 text-gray-600 text-xs rounded-full"
                 >
                   {tag}
@@ -99,30 +115,33 @@ export default function Search() {
               ))}
             </div>
 
-            <h2 className="text-sm font-bold text-gray-900 mb-3 mt-6">📢 热门话题</h2>
-            <div className="space-y-2">
-              {MOCK_TOPICS.slice(0, 3).map(topic => {
-                const typeConfig = getTopicTypeConfig(topic.type)
-                return (
-                  <div
-                    key={topic.id}
-                    onClick={() => navigate(`/topic/${topic.id}`)}
-                    className="bg-white rounded-xl p-3 border border-gray-100 active:bg-gray-50"
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className={`px-2 py-0.5 text-[10px] rounded-full ${typeConfig.color}`}>
-                        {typeConfig.icon} {typeConfig.label}
-                      </span>
+            {hotTopics.length > 0 && (
+              <>
+                <h2 className="text-sm font-bold text-gray-900 mb-3 mt-6">📢 热门话题</h2>
+                <div className="space-y-2">
+                  {hotTopics.map(topic => (
+                    <div
+                      key={topic.id}
+                      onClick={() => navigate(`/topic/${topic.id}`)}
+                      className="bg-white rounded-xl p-3 border border-gray-100 active:bg-gray-50"
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="px-2 py-0.5 text-[10px] rounded-full bg-gray-100 text-gray-600">
+                          {topic.type}
+                        </span>
+                      </div>
+                      <h3 className="text-sm font-bold text-gray-900">{topic.title}</h3>
+                      <div className="text-[11px] text-gray-400 mt-1">
+                        💡 {topic.meme_count || 0} 梗 · 👥 {topic.participant_count || 0} 参与
+                      </div>
                     </div>
-                    <h3 className="text-sm font-bold text-gray-900">{topic.title}</h3>
-                    <div className="text-[11px] text-gray-400 mt-1">
-                      💡 {topic.stats.memeCount} 梗 · 👁 {formatTopicStats(topic.stats.totalViews)} 曝光
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
+        ) : loading ? (
+          <div className="text-center py-12 text-gray-400 text-sm">搜索中...</div>
         ) : !hasResults ? (
           <div className="text-center py-12">
             <div className="text-4xl mb-3">🔍</div>
@@ -136,13 +155,13 @@ export default function Search() {
               <div>
                 <h3 className="text-sm font-bold text-gray-900 mb-2">📦 内容 ({contentResults.length})</h3>
                 <div className="space-y-2">
-                  {contentResults.map((c: any) => (
+                  {contentResults.map(c => (
                     <div key={c.id} onClick={() => navigate(`/content/${c.id}`)} className="bg-white rounded-xl p-3 border border-gray-100 active:bg-gray-50">
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-sm">{c.type === 'video' ? '🎬' : c.type === 'product' ? '📦' : '💡'}</span>
                         <h4 className="text-sm font-bold text-gray-900">{c.title}</h4>
                       </div>
-                      <p className="text-xs text-gray-500 line-clamp-1">{c.description}</p>
+                      {c.description && <p className="text-xs text-gray-500 line-clamp-1">{c.description}</p>}
                     </div>
                   ))}
                 </div>
@@ -154,22 +173,17 @@ export default function Search() {
               <div>
                 <h3 className="text-sm font-bold text-gray-900 mb-2">📢 话题 ({topicResults.length})</h3>
                 <div className="space-y-2">
-                  {topicResults.map(t => {
-                    const typeConfig = getTopicTypeConfig(t.type)
-                    return (
-                      <div key={t.id} onClick={() => navigate(`/topic/${t.id}`)} className="bg-white rounded-xl p-3 border border-gray-100 active:bg-gray-50">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className={`px-2 py-0.5 text-[10px] rounded-full ${typeConfig.color}`}>
-                            {typeConfig.icon} {typeConfig.label}
-                          </span>
-                        </div>
-                        <h4 className="text-sm font-bold text-gray-900">{t.title}</h4>
-                        <div className="text-[11px] text-gray-400 mt-1">
-                          💡 {t.stats.memeCount} 梗 · 💰 {t.rewardPool} 积分
-                        </div>
+                  {topicResults.map(t => (
+                    <div key={t.id} onClick={() => navigate(`/topic/${t.id}`)} className="bg-white rounded-xl p-3 border border-gray-100 active:bg-gray-50">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="px-2 py-0.5 text-[10px] rounded-full bg-gray-100 text-gray-600">{t.type}</span>
                       </div>
-                    )
-                  })}
+                      <h4 className="text-sm font-bold text-gray-900">{t.title}</h4>
+                      <div className="text-[11px] text-gray-400 mt-1">
+                        💡 {t.meme_count || 0} 梗 · 👥 {t.participant_count || 0} 参与
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
@@ -180,16 +194,11 @@ export default function Search() {
                 <h3 className="text-sm font-bold text-gray-900 mb-2">💡 梗 ({memeResults.length})</h3>
                 <div className="space-y-2">
                   {memeResults.map(m => (
-                    <div key={m.id} className="bg-white rounded-xl p-3 border border-gray-100">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`px-2 py-0.5 text-[10px] rounded-full ${getStatusColor(m.status)}`}>
-                          {getStatusLabel(m.status)}
-                        </span>
-                      </div>
+                    <div key={m.id} onClick={() => navigate(`/content/${m.id}`)} className="bg-white rounded-xl p-3 border border-gray-100 active:bg-gray-50">
                       <h4 className="text-sm font-bold text-gray-900">{m.title}</h4>
                       <p className="text-xs text-gray-500 line-clamp-1">{m.content}</p>
                       <div className="text-[11px] text-gray-400 mt-1">
-                        👁 {formatStat(m.stats.views)} · ❤️ {formatStat(m.stats.likes)}
+                        👁 {m.view_count || 0} · ❤️ {m.like_count || 0}
                       </div>
                     </div>
                   ))}

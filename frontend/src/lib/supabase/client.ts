@@ -1059,3 +1059,62 @@ export async function search(query: string) {
     memes: memes.data || [],
   }
 }
+
+// ===== 关注系统 =====
+
+export async function toggleFollow(followerId: string, followingId: string) {
+  if (followerId === followingId) throw new Error('不能关注自己')
+
+  const { data: existing } = await supabase
+    .from('follows')
+    .select('id')
+    .eq('follower_id', followerId)
+    .eq('following_id', followingId)
+    .maybeSingle()
+
+  if (existing) {
+    await supabase.from('follows').delete().eq('id', existing.id)
+    return false
+  } else {
+    await supabase.from('follows').insert({
+      follower_id: followerId,
+      following_id: followingId,
+    })
+    return true
+  }
+}
+
+export async function isFollowing(followerId: string, followingId: string) {
+  const { data } = await supabase
+    .from('follows')
+    .select('id')
+    .eq('follower_id', followerId)
+    .eq('following_id', followingId)
+    .maybeSingle()
+
+  return !!data
+}
+
+export async function getFollowCounts(userId: string) {
+  const [followers, following] = await Promise.all([
+    supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', userId),
+    supabase.from('follows').select('*', { count: 'exact', head: true }).eq('follower_id', userId),
+  ])
+  return {
+    followers: followers.count || 0,
+    following: following.count || 0,
+  }
+}
+
+// ===== 通知系统 =====
+
+export async function createNotification(userId: string, type: string, title: string, content: string, relatedId?: string) {
+  await supabase.from('notifications').insert({
+    user_id: userId,
+    type,
+    title,
+    content,
+    related_id: relatedId || '',
+    is_read: false,
+  })
+}

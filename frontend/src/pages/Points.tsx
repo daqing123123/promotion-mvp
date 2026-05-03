@@ -148,13 +148,16 @@ export default function Points({ user }: PointsProps) {
               <p className="text-white/60 text-sm">积分可用于推广、投票、置顶等</p>
             </div>
             {spendRules.map(rule => (
-              <div key={rule.id} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl">
+              <div key={rule.id} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl opacity-60">
                 <span className="text-2xl">{rule.icon}</span>
                 <div className="flex-1">
                   <div className="font-medium text-white text-sm">{rule.action}</div>
                   <div className="text-xs text-white/40">{rule.desc}</div>
                 </div>
-                <span className="text-red-400 font-bold">{rule.points}</span>
+                <div className="text-right">
+                  <span className="text-red-400 font-bold">{rule.points}</span>
+                  <div className="text-[10px] text-white/30 mt-0.5">即将上线</div>
+                </div>
               </div>
             ))}
           </>

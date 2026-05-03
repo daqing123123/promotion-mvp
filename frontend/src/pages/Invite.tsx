@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase, earnPoints } from '../lib/supabase/client'
+import { toast } from '../lib/toast'
 
 const GROWTH_LEVELS = [
   { key: 'newbie', label: '新手', icon: '🌱', min: 0, color: 'text-gray-400' },
@@ -80,7 +81,7 @@ export default function Invite({ user }: { user: any }) {
       navigator.share({ title: '巨浪邀请', text, url })
     } else {
       navigator.clipboard.writeText(text + '\n' + url)
-      alert('邀请链接已复制 ✓')
+      toast.success('邀请链接已复制 ✓')
     }
   }
 
@@ -88,7 +89,7 @@ export default function Invite({ user }: { user: any }) {
     if (!inputCode.trim() || claiming) return
     if (!user?.id) return navigate('/login')
     if (inputCode.trim().toUpperCase() === myCode) {
-      alert('不能邀请自己哦 😄')
+      toast.info('不能邀请自己哦 😄')
       return
     }
     setClaiming(true)
@@ -101,7 +102,7 @@ export default function Invite({ user }: { user: any }) {
         .single()
 
       if (!codeData) {
-        alert('邀请码不存在')
+        toast.error('邀请码不存在')
         return
       }
 
@@ -113,7 +114,7 @@ export default function Invite({ user }: { user: any }) {
         .maybeSingle()
 
       if (existing) {
-        alert('你已经使用过邀请码了')
+        toast.warning('你已经使用过邀请码了')
         return
       }
 
@@ -136,7 +137,7 @@ export default function Invite({ user }: { user: any }) {
 
       if (error) {
         if (error.code === '23505') {
-          alert('你已经使用过邀请码了')
+          toast.warning('你已经使用过邀请码了')
         } else {
           throw error
         }
@@ -153,11 +154,11 @@ export default function Invite({ user }: { user: any }) {
         .update({ uses_count: (codeData.uses_count || 0) + 1 })
         .eq('id', codeData.id)
 
-      alert('🎉 邀请码使用成功！+50积分')
+      toast.success('🎉 邀请码使用成功！+50积分')
       setInputCode('')
       loadInviteData()
     } catch (e: any) {
-      alert(e.message || '使用邀请码失败')
+      toast.error(e.message || '使用邀请码失败')
     } finally {
       setClaiming(false)
     }
@@ -233,7 +234,7 @@ export default function Invite({ user }: { user: any }) {
           </div>
           <button onClick={() => {
             navigator.clipboard.writeText(myCode)
-            alert('已复制 ✓')
+            toast.success('已复制 ✓')
           }} className="px-4 py-3 bg-gray-100 rounded-xl text-sm font-medium text-gray-600">
             复制
           </button>

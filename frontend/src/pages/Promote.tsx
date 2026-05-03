@@ -1,10 +1,11 @@
 // ===== 推广广场 — 真实数据版 =====
 
 import { useState, useEffect } from 'react'
-import { supabase, getPromoteHistory, promoteContent } from '../lib/supabase/client'
+import { supabase, getPromoteHistory, promoteContent, toggleLikeWithPoints } from '../lib/supabase/client'
 import { getLevelTitle, getLevelBadge, getLevelColor, SPEND_ACTIONS } from '../lib/rewardSystem'
 import { checkAndUnlockAchievements } from '../lib/achievements'
 import PointsCenter from '../components/PointsCenter'
+import { toast } from '../lib/toast'
 
 interface PromoteProps {
   user: any
@@ -19,6 +20,8 @@ export default function Promote({ user, setUser, isMobile: _isMobile }: PromoteP
   const [myPromotes, setMyPromotes] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [promotingId, setPromotingId] = useState<string | null>(null)
+  const [likedIds, setLikedIds] = useState<Set<string>>(new Set())
+  const [likeCounts, setLikeCounts] = useState<Record<string, number>>({})
 
   const userData = user || { level: 1, points: 0 }
 
@@ -32,7 +35,6 @@ export default function Promote({ user, setUser, isMobile: _isMobile }: PromoteP
 
   const loadPublicData = async () => {
     setLoading(true)
-    // 加载可帮推的内容（热门内容）
     const { data: contents } = await supabase
       .from('contents')
       .select('id, type, title, description, cover_url, like_count, view_count, promote_count, comment_count, creator_id')
@@ -73,40 +75,66 @@ export default function Promote({ user, setUser, isMobile: _isMobile }: PromoteP
   }
 
   const handlePromote = async (itemId: string, source: string) => {
-    if (!user?.id) return alert('请先登录')
+    if (!user?.id) { toast.warning('请先登录'); return }
     setPromotingId(itemId)
     try {
-      // 帮推只支持 contents 表（promotes 外键关联 contents）
       if (source !== 'contents') {
-        alert('目前只支持帮推正式内容')
+        toast.info('帮推仅支持内容')
         return
       }
       const result = await promoteContent(user.id, itemId)
-      // 更新本地状态
       setPromotableItems(prev => prev.map(item =>
         item.id === itemId
           ? { ...item, promote_count: (item.promote_count || 0) + 1 }
           : item
       ))
-      // 更新用户积分
       if (setUser && result.points) {
         setUser((prev: any) => prev ? { ...prev, points: result.points.points, level: result.points.level } : prev)
       }
+      toast.success('🔥 帮推成功 +20积分')
       checkAndUnlockAchievements(user.id).catch(() => {})
-      alert('帮推成功！+20积分')
     } catch (e: any) {
-      alert(e.message || '帮推失败')
+      if (e.message === '已经帮推过该内容') {
+        toast.info('已经帮推过该内容')
+      } else {
+        toast.error(e.message || '帮推失败')
+      }
     } finally {
       setPromotingId(null)
     }
   }
 
-  // 筛选逻辑
+  const handleLike = async (itemId: string, source: string) => {
+    if (!user?.id) { toast.warning('请先登录'); return }
+    const targetType = source === 'memes' ? 'meme' : 'content'
+    const wasLiked = likedIds.has(itemId)
+    const delta = wasLiked ? -1 : 1
+    setLikedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(itemId)) next.delete(itemId)
+      else next.add(itemId)
+      return next
+    })
+    setLikeCounts(prev => ({ ...prev, [itemId]: (prev[itemId] ?? 0) + delta }))
+    try {
+      await toggleLikeWithPoints(targetType, itemId)
+      if (!wasLiked) toast.points(5)
+    } catch {
+      setLikedIds(prev => {
+        const next = new Set(prev)
+        if (next.has(itemId)) next.delete(itemId)
+        else next.add(itemId)
+        return next
+      })
+      setLikeCounts(prev => ({ ...prev, [itemId]: (prev[itemId] ?? 0) - delta }))
+    }
+  }
+
   const filteredItems = promotableItems.filter(item => {
     if (filter === 'all') return true
     if (filter === 'hot') return (item.like_count || 0) > 100
-    if (filter === 'new') return true // 按最新排序已经是默认
-    if (filter === 'ending') return false // 暂无截止概念
+    if (filter === 'new') return true
+    if (filter === 'ending') return false
     return true
   })
 
@@ -171,7 +199,7 @@ export default function Promote({ user, setUser, isMobile: _isMobile }: PromoteP
       {/* 我的帮推记录 */}
       {user?.id && myPromotes.length > 0 && (
         <div className="px-5 pt-4">
-          <h2 className="text-sm font-bold text-gray-900 mb-3">📊 我的帮推 ({myPromotes.length})</h2>
+          <h2 className="text-sm font-bold text-gray-900 mb-3">📢 我的帮推 ({myPromotes.length})</h2>
           <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2">
             {myPromotes.slice(0, 5).map((p: any) => (
               <div key={p.id} className="shrink-0 bg-white rounded-xl p-3 border border-gray-100 min-w-[140px]">
@@ -203,12 +231,14 @@ export default function Promote({ user, setUser, isMobile: _isMobile }: PromoteP
             const isMeme = item._source === 'memes'
             const title = isMeme ? (item.title || item.content?.substring(0, 30)) : item.title
             const description = isMeme ? item.content : item.description
+            const isLiked = likedIds.has(item.id)
+            const displayLikeCount = (likeCounts[item.id] ?? item.like_count) || 0
 
             return (
               <div key={item.id} className="bg-white rounded-2xl p-4 border border-gray-100">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="px-2 py-0.5 text-[10px] rounded-full bg-gray-100 text-gray-600">
-                    {isMeme ? '📝 段子' : item.type}
+                    {isMeme ? '🎭 段子' : item.type}
                   </span>
                   {(item.like_count || 0) > 100 && (
                     <span className="px-2 py-0.5 text-[10px] rounded-full bg-red-100 text-red-600">
@@ -223,8 +253,20 @@ export default function Promote({ user, setUser, isMobile: _isMobile }: PromoteP
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4 text-xs text-gray-400">
                     <span>👁 {item.view_count || 0}</span>
-                    <span>❤️ {item.like_count || 0}</span>
-                    <span>🔥 {item.promote_count || item.share_count || 0} 帮推</span>
+                    <button
+                      onClick={() => handleLike(item.id, item._source)}
+                      className="flex items-center gap-1 active:scale-95 transition-transform"
+                    >
+                      <span>{isLiked ? '❤️' : '🤍'}</span>
+                      <span>{displayLikeCount}</span>
+                    </button>
+                    <button
+                      onClick={() => window.location.href = `/content/${item.id}`}
+                      className="flex items-center gap-1 active:scale-95 transition-transform"
+                    >
+                      <span>💬</span>
+                      <span>{item.comment_count || 0}</span>
+                    </button>
                   </div>
                   {!isMeme && (
                     <button

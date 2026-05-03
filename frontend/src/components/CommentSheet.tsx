@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase, addCommentWithPoints } from '../lib/supabase/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
+import { toast } from '../lib/toast'
 
 interface CommentSheetProps {
   contentId: string
@@ -89,7 +90,7 @@ export default function CommentSheet({ contentId, source, userId, onClose, onCom
       uid = authUser?.id
     }
     if (!uid) {
-      alert('请先登录')
+      toast.warning('请先登录')
       setSubmitting(false)
       return
     }
@@ -112,7 +113,7 @@ export default function CommentSheet({ contentId, source, userId, onClose, onCom
       onCommentAdded?.()
       if (uid) checkAndUnlockAchievements(uid).catch(() => {})
     } catch (e: any) {
-      alert(e.message || '评论失败')
+      toast.error(e.message || '评论失败')
     }
     setSubmitting(false)
   }

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase, earnPoints, toggleLikeWithPoints, addCommentWithPoints } from '../lib/supabase/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
+import { toast } from '../lib/toast'
 import MemeModal from '../components/MemeModal'
 
 export default function TopicDetail({ user }: { user?: any }) {
@@ -116,7 +117,7 @@ export default function TopicDetail({ user }: { user?: any }) {
       setNewComment('')
       checkAndUnlockAchievements(user.id).catch(() => {})
     } catch (e: any) {
-      alert(e.message || '评论失败')
+      toast.error(e.message || '评论失败')
     } finally {
       setSubmitting(false)
     }
@@ -181,14 +182,14 @@ export default function TopicDetail({ user }: { user?: any }) {
       setShowAddressForm(false)
       checkAndUnlockAchievements(user.id).catch(() => {})
       if (isCoupon) {
-        alert(`🎫 优惠券已领取！${topic.coupon_value || ''}\n在"我的优惠券"中查看`)
+        toast.success(`🎫 优惠券已领取！${topic.coupon_value || ''}`)
       } else if (isPhysical) {
-        alert('已提交！等待商家发货')
+        toast.success('已提交！等待商家发货')
       } else {
-        alert(`接受推广成功！+${topic.promote_reward || 20}积分`)
+        toast.success(`接受推广成功！+${topic.promote_reward || 20}积分`)
       }
     } catch (e: any) {
-      alert(e.message || '接受推广失败')
+      toast.error(e.message || '接受推广失败')
     } finally {
       setAccepting(false)
     }
@@ -196,7 +197,8 @@ export default function TopicDetail({ user }: { user?: any }) {
 
   const handleSubmitAddress = async () => {
     if (!address.name || !address.phone || !address.address) {
-      return alert('请填写完整收货信息')
+      toast.warning('请填写完整收货信息')
+      return
     }
     setSubmittingAddress(true)
     try {
@@ -209,14 +211,14 @@ export default function TopicDetail({ user }: { user?: any }) {
           status: 'address_submitted',
         }).eq('id', myPromote.id)
         setMyPromote({ ...myPromote, ...address, status: 'address_submitted' })
-        alert('地址已提交！')
+        toast.success('地址已提交！')
       } else {
         // 直接接受推广 + 提交地址
         await handleAcceptPromote()
       }
       setShowAddressForm(false)
     } catch (e: any) {
-      alert(e.message || '提交失败')
+      toast.error(e.message || '提交失败')
     } finally {
       setSubmittingAddress(false)
     }
@@ -229,7 +231,7 @@ export default function TopicDetail({ user }: { user?: any }) {
       navigator.share({ title: topic.title, text, url })
     } else {
       navigator.clipboard.writeText(text + ' ' + url)
-      alert('推广链接已复制，快去分享吧！')
+      toast.success('推广链接已复制，快去分享吧！')
     }
   }
 
