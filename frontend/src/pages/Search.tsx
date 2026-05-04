@@ -1,9 +1,8 @@
-// @ts-nocheck
 // ===== 搜索页面（真实数据版） =====
 
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getTopics, search } from '../lib/api/client'
+import { supabase } from '../lib/supabase/client'
 
 type SearchTab = 'all' | 'content' | 'topic' | 'meme'
 
@@ -24,37 +23,40 @@ export default function Search() {
   }, [])
 
   const loadHotTopics = async () => {
-    try {
-      const data = await getTopics()
-      const topics = (data || []).slice(0, 3)
-      setHotTopics(topics)
+    const { data } = await supabase
+      .from('topics')
+      .select('id, title, type, description, participant_count, meme_count')
+      .eq('status', 'active')
+      .order('hot_score', { ascending: false })
+      .limit(3)
+    if (data) setHotTopics(data)
 
-      const tags = topics.map((t: any) => t.title).slice(0, 6)
-      if (tags.length < 6) {
-        const defaults = ['国产平替', '独立音乐', '古装剧', '10元挑战', '社区英雄', '宇宙探索']
-        while (tags.length < 6 && defaults.length > 0) {
-          const tag = defaults.shift()!
-          if (!tags.includes(tag)) tags.push(tag)
-        }
+    // 从话题标题提取热门标签
+    const tags = (data || []).map(t => t.title).slice(0, 6)
+    if (tags.length < 6) {
+      // 补充一些默认标签
+      const defaults = ['国产平替', '独立音乐', '古装剧', '10元挑战', '社区英雄', '宇宙探索']
+      while (tags.length < 6 && defaults.length > 0) {
+        const tag = defaults.shift()!
+        if (!tags.includes(tag)) tags.push(tag)
       }
-      setHotTags(tags)
-    } catch {}
+    }
+    setHotTags(tags)
   }
 
   const doSearch = async () => {
     if (!query.trim()) return
     setSearched(true)
     setLoading(true)
-    try {
-      const results = await search(query.trim())
-      setContentResults(results.contents || [])
-      setTopicResults(results.topics || [])
-      setMemeResults(results.memes || [])
-    } catch {
-      setContentResults([])
-      setTopicResults([])
-      setMemeResults([])
-    }
+    const q = `%${query.trim()}%`
+    const [cRes, tRes, mRes] = await Promise.all([
+      supabase.from('contents').select('id, type, title, description').ilike('title', q).limit(10),
+      supabase.from('topics').select('id, title, type, description, participant_count, meme_count').ilike('title', q).limit(10),
+      supabase.from('memes').select('id, title, content, like_count, view_count').ilike('title', q).limit(10),
+    ])
+    setContentResults(cRes.data || [])
+    setTopicResults(tRes.data || [])
+    setMemeResults(mRes.data || [])
     setLoading(false)
   }
 
@@ -118,7 +120,7 @@ export default function Search() {
               {hotTags.map(tag => (
                 <button
                   key={tag}
-                  onClick={() => { setQuery(tag); setTimeout(doSearch, 0) }}
+                  onClick={() => { setQuery(tag); doSearch() }}
                   className="px-3 py-1.5 bg-white border border-gray-200 text-gray-600 text-xs rounded-full"
                 >
                   {tag}
@@ -128,7 +130,7 @@ export default function Search() {
 
             {hotTopics.length > 0 && (
               <>
-                <h2 className="text-sm font-bold text-gray-900 mb-3 mt-6">🏠 热门话题</h2>
+                <h2 className="text-sm font-bold text-gray-900 mb-3 mt-6">📢 热门话题</h2>
                 <div className="space-y-2">
                   {hotTopics.map(topic => (
                     <div
@@ -143,7 +145,7 @@ export default function Search() {
                       </div>
                       <h3 className="text-sm font-bold text-gray-900">{topic.title}</h3>
                       <div className="text-[11px] text-gray-400 mt-1">
-                        🔗 {topic.meme_count || 0} 梗 · 👀 {topic.participant_count || 0} 参与
+                        💡 {topic.meme_count || 0} 梗 · 👥 {topic.participant_count || 0} 参与
                       </div>
                     </div>
                   ))}
@@ -164,12 +166,12 @@ export default function Search() {
             {/* 内容结果 */}
             {(tab === 'all' || tab === 'content') && contentResults.length > 0 && (
               <div>
-                <h3 className="text-sm font-bold text-gray-900 mb-2">📄 内容 ({contentResults.length})</h3>
+                <h3 className="text-sm font-bold text-gray-900 mb-2">📦 内容 ({contentResults.length})</h3>
                 <div className="space-y-2">
                   {contentResults.map(c => (
                     <div key={c.id} onClick={() => navigate(`/content/${c.id}`)} className="bg-white rounded-xl p-3 border border-gray-100 active:bg-gray-50">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-sm">{c.type === 'video' ? '🎬' : c.type === 'product' ? '📦' : '🔗'}</span>
+                        <span className="text-sm">{c.type === 'video' ? '🎬' : c.type === 'product' ? '📦' : '💡'}</span>
                         <h4 className="text-sm font-bold text-gray-900">{c.title}</h4>
                       </div>
                       {c.description && <p className="text-xs text-gray-500 line-clamp-1">{c.description}</p>}
@@ -182,7 +184,7 @@ export default function Search() {
             {/* 话题结果 */}
             {(tab === 'all' || tab === 'topic') && topicResults.length > 0 && (
               <div>
-                <h3 className="text-sm font-bold text-gray-900 mb-2">🏠 话题 ({topicResults.length})</h3>
+                <h3 className="text-sm font-bold text-gray-900 mb-2">📢 话题 ({topicResults.length})</h3>
                 <div className="space-y-2">
                   {topicResults.map(t => (
                     <div key={t.id} onClick={() => navigate(`/topic/${t.id}`)} className="bg-white rounded-xl p-3 border border-gray-100 active:bg-gray-50">
@@ -191,7 +193,7 @@ export default function Search() {
                       </div>
                       <h4 className="text-sm font-bold text-gray-900">{t.title}</h4>
                       <div className="text-[11px] text-gray-400 mt-1">
-                        🔗 {t.meme_count || 0} 梗 · 👀 {t.participant_count || 0} 参与
+                        💡 {t.meme_count || 0} 梗 · 👥 {t.participant_count || 0} 参与
                       </div>
                     </div>
                   ))}
@@ -202,7 +204,7 @@ export default function Search() {
             {/* 梗结果 */}
             {(tab === 'all' || tab === 'meme') && memeResults.length > 0 && (
               <div>
-                <h3 className="text-sm font-bold text-gray-900 mb-2">🔗 梗 ({memeResults.length})</h3>
+                <h3 className="text-sm font-bold text-gray-900 mb-2">💡 梗 ({memeResults.length})</h3>
                 <div className="space-y-2">
                   {memeResults.map(m => (
                     <div key={m.id} onClick={() => navigate(`/content/${m.id}`)} className="bg-white rounded-xl p-3 border border-gray-100 active:bg-gray-50">

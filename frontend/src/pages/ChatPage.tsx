@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getNotifications, markAllNotificationsRead } from '../lib/api/client'
+import { supabase } from '../lib/supabase/client'
 
 export default function ChatPage({ user }: { user: any }) {
   const navigate = useNavigate()
@@ -17,18 +17,22 @@ export default function ChatPage({ user }: { user: any }) {
 
   const fetchNotifications = async () => {
     setLoading(true)
-    try {
-      const data = await getNotifications()
-      setNotifications(data || [])
-    } catch {}
+    const { data } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+    setNotifications(data || [])
     setLoading(false)
   }
 
   const markAllRead = async () => {
-    try {
-      await markAllNotificationsRead()
-      fetchNotifications()
-    } catch {}
+    await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('user_id', user.id)
+      .eq('is_read', false)
+    fetchNotifications()
   }
 
   // 切换到聊天 tab 时清除红点

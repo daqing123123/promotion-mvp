@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getTodayShareCount, getTodaySignIn, getPointsHistory } from '../lib/api/client'
+import { supabase, getTodayShareCount, getTodaySignIn } from '../lib/supabase/client'
 
 interface PointTask {
   id: string
@@ -29,21 +29,21 @@ export default function PointsCenter({ user }: { user: any }) {
   const loadProgress = async () => {
     if (!user?.id) return
     try {
-      const [shareCount, signed, history] = await Promise.all([
-        getTodayShareCount(),
-        getTodaySignIn(),
-        getPointsHistory(200),
+      const [shareCount, signed] = await Promise.all([
+        getTodayShareCount(user.id),
+        getTodaySignIn(user.id),
       ])
       setTodayShared(shareCount)
       setTodaySigned(signed)
 
-      // 今日点赞/评论数 — 从积分历史中统计
+      // 今日点赞/评论数
       const today = new Date().toISOString().split('T')[0]
-      const todayLogs = (history || []).filter(
-        (log: any) => log.created_at >= today + 'T00:00:00'
-      )
-      setTodayLikes(todayLogs.filter((log: any) => log.type === 'like').length)
-      setTodayComments(todayLogs.filter((log: any) => log.type === 'comment').length)
+      const [likes, comments] = await Promise.all([
+        supabase.from('point_logs').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('type', 'like').gte('created_at', today + 'T00:00:00'),
+        supabase.from('point_logs').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('type', 'comment').gte('created_at', today + 'T00:00:00'),
+      ])
+      setTodayLikes(likes.count || 0)
+      setTodayComments(comments.count || 0)
     } catch {}
   }
 

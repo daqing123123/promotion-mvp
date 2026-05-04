@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { updateUser } from '../lib/api/client'
+import { supabase } from '../lib/supabase/client'
 import { toast } from '../lib/toast'
 
 const AVATAR_OPTIONS = ['👤', '😎', '🤠', '👻', '🐱', '🐶', '🦊', '🐼', '🦁', '🐸', '🌸', '⚡', '🔥', '🌊', '💎', '🎮', '🎸', '🎨', '🚀', '🌙']
@@ -21,7 +21,12 @@ export default function EditProfile({ user, setUser }: { user: any; setUser: (u:
 
     setSaving(true)
     try {
-      await updateUser(user.id, { name: name.trim(), bio: bio.trim(), avatar })
+      const { error } = await supabase
+        .from('users')
+        .update({ name: name.trim(), bio: bio.trim(), avatar })
+        .eq('id', user.id)
+
+      if (error) throw error
 
       setUser({ ...user, name: name.trim(), bio: bio.trim(), avatar })
       toast.success('保存成功')

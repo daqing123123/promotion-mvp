@@ -1,9 +1,8 @@
-﻿// @ts-nocheck
-// ===== 璇濋璇︽儏椤?鈥?鍝佺墝鎺ㄥ箍瀹屾暣鐗?=====
+// ===== 话题详情页 — 品牌推广完整版 =====
 
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { getTopicById, getMemesByTopic, getComments, checkInteraction, toggleLikeWithPoints, addCommentWithPoints, getUserById, getTopicPromotes, acceptTopicPromote, updateTopic, updateTopicPromote, claimTopicCoupon, createMeme } from '../lib/api/client'
+import { supabase, earnPoints, toggleLikeWithPoints, addCommentWithPoints } from '../lib/supabase/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
 import { toast } from '../lib/toast'
 import MemeModal from '../components/MemeModal'
@@ -34,67 +33,60 @@ export default function TopicDetail({ user }: { user?: any }) {
 
   const fetchTopic = async (topicId: string) => {
     setLoading(true)
-    try {
-      const t = await getTopicById(topicId)
-      setTopic(t)
-      if (t) {
-        // 骞惰鍔犺浇
-        const [memesData, commentsData, likeStatus] = await Promise.all([
-          getMemesByTopic(topicId),
-          getComments('topic', topicId),
-          checkInteraction('topic', topicId, 'like').catch(() => null),
-        ])
+    const { data: t } = await supabase.from('topics').select('*').eq('id', topicId).single()
+    setTopic(t)
+    if (t) {
+      // 并行加载
+      const [memesRes, commentsRes, likeRes] = await Promise.all([
+        supabase.from('memes').select('*').eq('topic_id', topicId).order('hot_score', { ascending: false }),
+        supabase.from('comments').select('*').eq('target_type', 'topic').eq('target_id', topicId).order('created_at', { ascending: false }).limit(50),
+        supabase.from('interactions').select('id').eq('target_type', 'topic').eq('target_id', topicId).eq('action', 'like'),
+      ])
 
-        setMemes(memesData || [])
-        setLikeCount(Array.isArray(likeStatus) ? likeStatus.length : (likeStatus ? 1 : 0))
+      setMemes(memesRes.data || [])
+      setLikeCount(likeRes.data?.length || 0)
 
-        // 璇勮 + 鐢ㄦ埛淇℃伅
-        const cmts = commentsData || []
-        const userIds = [...new Set(cmts.map((c: any) => c.user_id).filter(Boolean))]
-        let usersMap: Record<string, any> = {}
-        // 閫愪釜鑾峰彇鐢ㄦ埛淇℃伅锛圓PI 涓嶆敮鎸佹壒閲忥級
-        await Promise.all(
-          userIds.map(async (uid: string) => {
-            try {
-              const u = await getUserById(uid)
-              if (u) usersMap[uid] = u
-            } catch {}
-          })
-        )
-        setComments(cmts.map((c: any) => ({
-          ...c,
-          user_name: usersMap[c.user_id]?.name || '鍖垮悕鐢ㄦ埛',
-          user_avatar: usersMap[c.user_id]?.avatar || '馃懁',
-        })))
-
-        // 褰撳墠鐢ㄦ埛鐘舵€?        if (user?.id) {
-          const [promotes, likedRes] = await Promise.all([
-            getTopicPromotes(topicId).catch(() => []),
-            checkInteraction('user', user.id, 'like').catch(() => null),
-          ])
-
-          // 鎵惧埌褰撳墠鐢ㄦ埛鐨勬帹骞胯褰?          const myPromoteRecord = (promotes || []).find((p: any) => p.user_id === user.id)
-          if (myPromoteRecord) {
-            setPromoted(true)
-            setMyPromote(myPromoteRecord)
-          }
-          if (likedRes) setLiked(true)
-          setPromoteProgress({ accepted: (promotes || []).length, target: t.promote_target || 100 })
-        } else {
-          const promotes = await getTopicPromotes(topicId).catch(() => [])
-          setPromoteProgress({ accepted: (promotes || []).length, target: t.promote_target || 100 })
-        }
+      // 评论 + 用户信息
+      const cmts = commentsRes.data || []
+      const userIds = [...new Set(cmts.map(c => c.user_id).filter(Boolean))]
+      let usersMap: Record<string, any> = {}
+      if (userIds.length > 0) {
+        const { data: usersData } = await supabase.from('users').select('id, name, avatar').in('id', userIds)
+        if (usersData) usersMap = Object.fromEntries(usersData.map(u => [u.id, u]))
       }
-    } catch {}
+      setComments(cmts.map(c => ({
+        ...c,
+        user_name: usersMap[c.user_id]?.name || '匿名用户',
+        user_avatar: usersMap[c.user_id]?.avatar || '👤',
+      })))
+
+      // 当前用户状态
+      if (user?.id) {
+        const [existing, likedRes, promoteData] = await Promise.all([
+          supabase.from('topic_promotes').select('*').eq('topic_id', topicId).eq('user_id', user.id).maybeSingle(),
+          supabase.from('interactions').select('id').eq('user_id', user.id).eq('target_type', 'topic').eq('target_id', topicId).eq('action', 'like').maybeSingle(),
+          supabase.from('topic_promotes').select('*', { count: 'exact', head: true }).eq('topic_id', topicId),
+        ])
+        if (existing.data) {
+          setPromoted(true)
+          setMyPromote(existing.data)
+        }
+        if (likedRes.data) setLiked(true)
+        setPromoteProgress({ accepted: promoteData.count || 0, target: t.promote_target || 100 })
+      } else {
+        const { count } = await supabase.from('topic_promotes').select('*', { count: 'exact', head: true }).eq('topic_id', topicId)
+        setPromoteProgress({ accepted: count || 0, target: t.promote_target || 100 })
+      }
+    }
     setLoading(false)
   }
 
-  const formatNum = (n: number) => n >= 10000 ? (n / 10000).toFixed(1) + '涓? : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n)
+  const formatNum = (n: number) => n >= 10000 ? (n / 10000).toFixed(1) + '万' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n)
 
   const getDaysLeft = (endDate: string) => {
-    if (!endDate) return '鏃犻檺鏈?
+    if (!endDate) return '无限期'
     const days = Math.ceil((new Date(endDate).getTime() - Date.now()) / 86400000)
-    return days > 0 ? `${days} 澶ー : '宸茬粨鏉?
+    return days > 0 ? `${days} 天` : '已结束'
   }
 
   const handleLike = async () => {
@@ -116,16 +108,16 @@ export default function TopicDetail({ user }: { user?: any }) {
     setSubmitting(true)
     try {
       const inserted = await addCommentWithPoints('topic', topic.id, newComment.trim())
-      const userInfo = await getUserById(user.id).catch(() => null)
+      const { data: userInfo } = await supabase.from('users').select('name, avatar').eq('id', user.id).single()
       setComments([{
         ...inserted,
-        user_name: userInfo?.name || user.name || '鍖垮悕鐢ㄦ埛',
-        user_avatar: userInfo?.avatar || user.avatar || '馃懁',
+        user_name: userInfo?.name || '匿名用户',
+        user_avatar: userInfo?.avatar || '👤',
       }, ...comments])
       setNewComment('')
       checkAndUnlockAchievements(user.id).catch(() => {})
     } catch (e: any) {
-      toast.error(e.message || '璇勮澶辫触')
+      toast.error(e.message || '评论失败')
     } finally {
       setSubmitting(false)
     }
@@ -135,7 +127,7 @@ export default function TopicDetail({ user }: { user?: any }) {
     if (!user?.id) return navigate('/login')
     if (promoted || accepting) return
 
-    // 濡傛灉鏄疄鐗╁鍔憋紝鍏堝脊鍦板潃琛ㄥ崟
+    // 如果是实物奖励，先弹地址表单
     const isPhysical = topic.reward_type === 'physical' || topic.reward_type === 'both'
     if (isPhysical && !showAddressForm) {
       setShowAddressForm(true)
@@ -145,10 +137,12 @@ export default function TopicDetail({ user }: { user?: any }) {
     setAccepting(true)
     try {
       const insertData: any = {
+        topic_id: topic.id,
+        user_id: user.id,
         status: 'accepted',
         points_earned: topic.promote_reward || 20,
       }
-      // 濡傛灉鏈夊湴鍧€淇℃伅
+      // 如果有地址信息
       if (address.name && address.phone && address.address) {
         insertData.receiver_name = address.name
         insertData.receiver_phone = address.phone
@@ -156,15 +150,29 @@ export default function TopicDetail({ user }: { user?: any }) {
         insertData.status = 'address_submitted'
       }
 
-      const data = await acceptTopicPromote(topic.id, insertData)
+      const { error, data } = await supabase.from('topic_promotes').insert(insertData).select().single()
+      if (error) throw error
 
-      // 鏇存柊璇濋甯帹鏁?      await updateTopic(topic.id, { promote_count: (topic.promote_count || 0) + 1 }).catch(() => {})
+      // 给积分
+      try {
+        await earnPoints(user.id, topic.promote_reward || 20, 'promote', `接受推广任务「${topic.title}」`)
+      } catch (e: any) {
+        if (!e.message?.includes('今日该类积分已达上限')) throw e
+      }
 
-      // 濡傛灉鏄紭鎯犲埜濂栧姳锛岃嚜鍔ㄥ彂鍒?      const isCoupon = topic.reward_type === 'coupon' || topic.coupon_type
+      await supabase.from('topics').update({ promote_count: (topic.promote_count || 0) + 1 }).eq('id', topic.id)
+
+      // 如果是优惠券奖励，自动发券
       if (isCoupon && topic.coupon_type) {
         try {
-          await claimTopicCoupon(topic.id)
-          await updateTopic(topic.id, { coupon_claimed: (topic.coupon_claimed || 0) + 1 }).catch(() => {})
+          await supabase.from('user_coupons').insert({
+            user_id: user.id,
+            topic_id: topic.id,
+            coupon_type: topic.coupon_type,
+            coupon_value: topic.coupon_value || '',
+            expire_at: new Date(Date.now() + (topic.coupon_expire_days || 30) * 86400000).toISOString(),
+          })
+          await supabase.from('topics').update({ coupon_claimed: (topic.coupon_claimed || 0) + 1 }).eq('id', topic.id)
         } catch {}
       }
 
@@ -174,14 +182,14 @@ export default function TopicDetail({ user }: { user?: any }) {
       setShowAddressForm(false)
       checkAndUnlockAchievements(user.id).catch(() => {})
       if (isCoupon) {
-        toast.success(`馃帿 浼樻儬鍒稿凡棰嗗彇锛?{topic.coupon_value || ''}`)
+        toast.success(`🎫 优惠券已领取！${topic.coupon_value || ''}`)
       } else if (isPhysical) {
-        toast.success('宸叉彁浜わ紒绛夊緟鍟嗗鍙戣揣')
+        toast.success('已提交！等待商家发货')
       } else {
-        toast.success(`鎺ュ彈鎺ㄥ箍鎴愬姛锛?${topic.promote_reward || 20}绉垎`)
+        toast.success(`接受推广成功！+${topic.promote_reward || 20}积分`)
       }
     } catch (e: any) {
-      toast.error(e.message || '鎺ュ彈鎺ㄥ箍澶辫触')
+      toast.error(e.message || '接受推广失败')
     } finally {
       setAccepting(false)
     }
@@ -189,28 +197,28 @@ export default function TopicDetail({ user }: { user?: any }) {
 
   const handleSubmitAddress = async () => {
     if (!address.name || !address.phone || !address.address) {
-      toast.warning('璇峰～鍐欏畬鏁存敹璐т俊鎭?)
+      toast.warning('请填写完整收货信息')
       return
     }
     setSubmittingAddress(true)
     try {
       if (myPromote?.id) {
-        // 宸叉帴鍙楁帹骞匡紝鏇存柊鍦板潃
-        await updateTopicPromote(myPromote.id, {
+        // 已接受推广，更新地址
+        await supabase.from('topic_promotes').update({
           receiver_name: address.name,
           receiver_phone: address.phone,
           receiver_address: address.address,
           status: 'address_submitted',
-        })
+        }).eq('id', myPromote.id)
         setMyPromote({ ...myPromote, ...address, status: 'address_submitted' })
-        toast.success('鍦板潃宸叉彁浜わ紒')
+        toast.success('地址已提交！')
       } else {
-        // 鐩存帴鎺ュ彈鎺ㄥ箍 + 鎻愪氦鍦板潃
+        // 直接接受推广 + 提交地址
         await handleAcceptPromote()
       }
       setShowAddressForm(false)
     } catch (e: any) {
-      toast.error(e.message || '鎻愪氦澶辫触')
+      toast.error(e.message || '提交失败')
     } finally {
       setSubmittingAddress(false)
     }
@@ -218,17 +226,17 @@ export default function TopicDetail({ user }: { user?: any }) {
 
   const handleShare = () => {
     const url = window.location.origin + '/topic/' + topic.id
-    const text = `${topic.brand_name ? '銆? + topic.brand_name + '銆? : ''}${topic.title} 鈥?鏉ュ法娴弬涓庢帹骞匡紝璧氱Н鍒嗭紒`
+    const text = `${topic.brand_name ? '【' + topic.brand_name + '】' : ''}${topic.title} — 来巨浪参与推广，赚积分！`
     if (navigator.share) {
       navigator.share({ title: topic.title, text, url })
     } else {
       navigator.clipboard.writeText(text + ' ' + url)
-      toast.success('鎺ㄥ箍閾炬帴宸插鍒讹紝蹇幓鍒嗕韩鍚э紒')
+      toast.success('推广链接已复制，快去分享吧！')
     }
   }
 
-  if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-400">鍔犺浇涓?..</div>
-  if (!topic) return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-400">璇濋涓嶅瓨鍦?/div>
+  if (loading) return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-400">加载中...</div>
+  if (!topic) return <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-400">话题不存在</div>
 
   const isBrand = topic.creator_type === 'brand' || !!topic.brand_name
   const isPhysical = topic.reward_type === 'physical' || topic.reward_type === 'both'
@@ -239,7 +247,7 @@ export default function TopicDetail({ user }: { user?: any }) {
 
   return (
     <div className="bg-gray-50 min-h-screen pb-24">
-      {/* 鍝佺墝澶撮儴 */}
+      {/* 品牌头部 */}
       {isBrand && topic.brand_logo ? (
         <div className="relative">
           <div className="h-32 bg-gradient-to-br from-gray-800 to-gray-600" />
@@ -249,119 +257,119 @@ export default function TopicDetail({ user }: { user?: any }) {
         </div>
       ) : null}
 
-      {/* 璇濋淇℃伅 */}
+      {/* 话题信息 */}
       <div className={`bg-white px-5 pb-5 ${isBrand && topic.brand_logo ? 'pt-14' : 'pt-12'}`}>
         <div className="flex items-center gap-2 mb-3">
-          <button onClick={() => navigate(-1)} className="text-gray-400">鈫?/button>
-          {isBrand && <span className="px-2.5 py-1 text-[11px] font-medium rounded-full bg-blue-50 text-blue-600">馃彿锔?鍝佺墝鎺ㄥ箍</span>}
+          <button onClick={() => navigate(-1)} className="text-gray-400">←</button>
+          {isBrand && <span className="px-2.5 py-1 text-[11px] font-medium rounded-full bg-blue-50 text-blue-600">🏷️ 品牌推广</span>}
           <span className="px-2.5 py-1 text-[11px] font-medium rounded-full bg-gray-100 text-gray-600">{topic.type}</span>
-          <span className="px-2.5 py-1 text-[11px] font-medium rounded-full bg-green-50 text-green-600">{topic.status === 'active' ? '杩涜涓? : '宸茬粨鏉?}</span>
+          <span className="px-2.5 py-1 text-[11px] font-medium rounded-full bg-green-50 text-green-600">{topic.status === 'active' ? '进行中' : '已结束'}</span>
         </div>
 
         {topic.brand_name && (
           <div className="flex items-center gap-2 mb-2">
             <span className="text-sm font-medium text-blue-600">{topic.brand_name}</span>
-            {topic.brand_description && <span className="text-xs text-gray-400">路 {topic.brand_description}</span>}
+            {topic.brand_description && <span className="text-xs text-gray-400">· {topic.brand_description}</span>}
           </div>
         )}
 
         <h1 className="text-xl font-bold text-gray-900 mb-2">{topic.title}</h1>
         <p className="text-sm text-gray-500 mb-4">{topic.description}</p>
 
-        {/* 鍙戣捣鑰?*/}
+        {/* 发起者 */}
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-lg">{topic.creator_avatar}</div>
           <div className="flex-1">
             <div className="text-sm font-bold text-gray-900">{topic.creator_name}</div>
-            <div className="text-xs text-gray-400">{isBrand ? '鍝佺墝鏂瑰彂璧? : '涓汉鍙戣捣'}</div>
+            <div className="text-xs text-gray-400">{isBrand ? '品牌方发起' : '个人发起'}</div>
           </div>
         </div>
 
-        {/* 缁熻 */}
+        {/* 统计 */}
         <div className="grid grid-cols-4 gap-3 mb-4">
-          <div className="bg-gray-50 rounded-xl p-3 text-center"><div className="text-lg font-bold text-gray-900">{topic.meme_count}</div><div className="text-[10px] text-gray-400">姊?/div></div>
-          <div className="bg-gray-50 rounded-xl p-3 text-center"><div className="text-lg font-bold text-gray-900">{formatNum(topic.total_views)}</div><div className="text-[10px] text-gray-400">鏇濆厜</div></div>
-          <div className="bg-gray-50 rounded-xl p-3 text-center"><div className="text-lg font-bold text-gray-900">{topic.participant_count}</div><div className="text-[10px] text-gray-400">鍙備笌</div></div>
-          <div className="bg-gray-50 rounded-xl p-3 text-center"><div className="text-lg font-bold text-orange-500">{topic.hot_score}</div><div className="text-[10px] text-gray-400">鐑害</div></div>
+          <div className="bg-gray-50 rounded-xl p-3 text-center"><div className="text-lg font-bold text-gray-900">{topic.meme_count}</div><div className="text-[10px] text-gray-400">梗</div></div>
+          <div className="bg-gray-50 rounded-xl p-3 text-center"><div className="text-lg font-bold text-gray-900">{formatNum(topic.total_views)}</div><div className="text-[10px] text-gray-400">曝光</div></div>
+          <div className="bg-gray-50 rounded-xl p-3 text-center"><div className="text-lg font-bold text-gray-900">{topic.participant_count}</div><div className="text-[10px] text-gray-400">参与</div></div>
+          <div className="bg-gray-50 rounded-xl p-3 text-center"><div className="text-lg font-bold text-orange-500">{topic.hot_score}</div><div className="text-[10px] text-gray-400">热度</div></div>
         </div>
 
-        {/* 鐐硅禐 + 缁熻鏍?*/}
+        {/* 点赞 + 统计栏 */}
         <div className="flex items-center justify-between pt-3 border-t border-gray-100">
           <div className="flex items-center gap-5">
             <button onClick={handleLike} className="flex items-center gap-1.5">
-              <span className="text-xl">{liked ? '鉂わ笍' : '馃'}</span>
+              <span className="text-xl">{liked ? '❤️' : '🤍'}</span>
               <span className="text-sm text-gray-600">{likeCount}</span>
             </button>
             <button className="flex items-center gap-1.5">
-              <span className="text-xl">馃挰</span>
+              <span className="text-xl">💬</span>
               <span className="text-sm text-gray-600">{comments.length}</span>
             </button>
             <button onClick={handleShare} className="flex items-center gap-1.5">
-              <span className="text-xl">鈫楋笍</span>
-              <span className="text-sm text-gray-600">鍒嗕韩</span>
+              <span className="text-xl">↗️</span>
+              <span className="text-sm text-gray-600">分享</span>
             </button>
           </div>
           <div className="flex items-center gap-3 text-xs text-gray-400">
-            {topic.reward_pool > 0 && <span>馃挵 {topic.reward_pool}绉垎</span>}
-            <span>鈴?{getDaysLeft(topic.end_date)}</span>
+            {topic.reward_pool > 0 && <span>💰 {topic.reward_pool}积分</span>}
+            <span>⏰ {getDaysLeft(topic.end_date)}</span>
           </div>
         </div>
       </div>
 
-      {/* 濂栧姳淇℃伅鍗＄墖 */}
+      {/* 奖励信息卡片 */}
       {isBrand && (
         <div className="mx-5 mt-4 bg-gradient-to-r from-amber-50 to-orange-50 rounded-2xl p-4 border border-amber-100">
           <div className="flex items-center gap-2 mb-2">
-            <span className="text-lg">馃巵</span>
-            <h3 className="text-sm font-bold text-gray-900">濂栧姳鍐呭</h3>
+            <span className="text-lg">🎁</span>
+            <h3 className="text-sm font-bold text-gray-900">奖励内容</h3>
           </div>
           <div className="space-y-1.5">
             {isPoints && (
               <div className="flex items-center gap-2 text-sm text-gray-700">
-                <span>馃挵</span>
-                <span>姣忔甯帹 +{topic.promote_reward || 20} 绉垎</span>
+                <span>💰</span>
+                <span>每次帮推 +{topic.promote_reward || 20} 积分</span>
               </div>
             )}
             {isCash && (
               <div className="flex items-center gap-2 text-sm text-gray-700">
-                <span>馃挼</span>
-                <span>{topic.reward_description || '鐜伴噾濂栧姳锛堣瑙佽瘽棰樿鏄庯級'}</span>
+                <span>💵</span>
+                <span>{topic.reward_description || '现金奖励（详见话题说明）'}</span>
               </div>
             )}
             {isCoupon && (
               <div className="flex items-center gap-2 text-sm text-gray-700">
-                <span>馃帿</span>
-                <span>{topic.coupon_value || '浼樻儬鍒?} 路 闄恵topic.coupon_count || 0}寮?{topic.coupon_claimed >= topic.coupon_count ? '(宸查瀹?' : `(${topic.coupon_claimed || 0}浜哄凡棰?`}</span>
+                <span>🎫</span>
+                <span>{topic.coupon_value || '优惠券'} · 限{topic.coupon_count || 0}张 {topic.coupon_claimed >= topic.coupon_count ? '(已领完)' : `(${topic.coupon_claimed || 0}人已领)`}</span>
               </div>
             )}
             {isPhysical && (
               <div className="flex items-center gap-2 text-sm text-gray-700">
-                <span>馃摝</span>
-                <span>{topic.reward_description || '瀹炵墿濂栧姳锛堣瑙佽瘽棰樿鏄庯級'}</span>
+                <span>📦</span>
+                <span>{topic.reward_description || '实物奖励（详见话题说明）'}</span>
               </div>
             )}
             {!isPoints && !isPhysical && !isCoupon && !isCash && (
-              <div className="text-sm text-gray-500">鏆傛棤濂栧姳璇存槑</div>
+              <div className="text-sm text-gray-500">暂无奖励说明</div>
             )}
           </div>
         </div>
       )}
 
-      {/* 鎺ㄥ箍浠诲姟鍗＄墖 */}
+      {/* 推广任务卡片 */}
       {isBrand && (
         <div className="mx-5 mt-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-5 border border-blue-100">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-base font-bold text-gray-900">馃摙 鎺ㄥ箍浠诲姟</h3>
+            <h3 className="text-base font-bold text-gray-900">📢 推广任务</h3>
             <span className="text-sm text-blue-600 font-medium">
-              {isPoints && `+${topic.promote_reward || 20}绉垎/娆}
-              {isPhysical && !isPoints && '馃巵 瀹炵墿濂栧姳'}
+              {isPoints && `+${topic.promote_reward || 20}积分/次`}
+              {isPhysical && !isPoints && '🎁 实物奖励'}
             </span>
           </div>
 
-          {/* 杩涘害鏉?*/}
+          {/* 进度条 */}
           <div className="mb-3">
             <div className="flex justify-between text-xs text-gray-500 mb-1">
-              <span>鎺ㄥ箍杩涘害</span>
+              <span>推广进度</span>
               <span>{promoteProgress.accepted}/{promoteProgress.target}</span>
             </div>
             <div className="h-2 bg-white rounded-full overflow-hidden">
@@ -369,65 +377,65 @@ export default function TopicDetail({ user }: { user?: any }) {
             </div>
           </div>
 
-          {/* 鎺ㄥ箍鐘舵€?*/}
+          {/* 推广状态 */}
           {promoted && myPromote && (
             <div className="mb-3 p-3 bg-white rounded-xl">
               <div className="flex items-center gap-2 text-sm">
-                {myPromote.status === 'accepted' && <><span className="text-green-500">鉁?/span><span className="text-gray-700">宸叉帴鍙楁帹骞?/span></>}
-                {myPromote.status === 'address_submitted' && <><span className="text-blue-500">馃摤</span><span className="text-gray-700">鍦板潃宸叉彁浜わ紝绛夊緟鍙戣揣</span></>}
-                {myPromote.status === 'shipped' && <><span className="text-purple-500">馃殮</span><span className="text-gray-700">宸插彂璐э紝璇锋敞鎰忔煡鏀?/span></>}
-                {myPromote.status === 'received' && <><span className="text-green-500">馃帀</span><span className="text-gray-700">宸叉敹璐?/span></>}
-                {myPromote.status === 'completed' && <><span className="text-green-500">鉁?/span><span className="text-gray-700">宸插畬鎴?/span></>}
+                {myPromote.status === 'accepted' && <><span className="text-green-500">✅</span><span className="text-gray-700">已接受推广</span></>}
+                {myPromote.status === 'address_submitted' && <><span className="text-blue-500">📬</span><span className="text-gray-700">地址已提交，等待发货</span></>}
+                {myPromote.status === 'shipped' && <><span className="text-purple-500">🚚</span><span className="text-gray-700">已发货，请注意查收</span></>}
+                {myPromote.status === 'received' && <><span className="text-green-500">🎉</span><span className="text-gray-700">已收货</span></>}
+                {myPromote.status === 'completed' && <><span className="text-green-500">✅</span><span className="text-gray-700">已完成</span></>}
               </div>
-              {/* 琛ュ～鍦板潃鎸夐挳 */}
+              {/* 补填地址按钮 */}
               {isPhysical && myPromote.status === 'accepted' && (
                 <button
                   onClick={() => setShowAddressForm(true)}
                   className="mt-2 text-xs text-blue-600 underline"
                 >
-                  馃摑 琛ュ～鏀惰揣鍦板潃
+                  📝 补填收货地址
                 </button>
               )}
             </div>
           )}
 
-          {/* 鎺ㄥ箍璇存槑 */}
+          {/* 推广说明 */}
           <div className="text-xs text-gray-500 mb-4 space-y-1">
-            {isPoints && <p>鈥?鎺ュ彈浠诲姟鍚庯紝鍒嗕韩璇濋閾炬帴缁欏ソ鍙?/p>}
-            {isPoints && <p>鈥?濂藉弸閫氳繃浣犵殑閾炬帴璁块棶锛屼綘鑾峰緱绉垎濂栧姳</p>}
-            {isPhysical && <p>鈥?鎺ュ彈浠诲姟鍚庡～鍐欐敹璐у湴鍧€</p>}
-            {isPhysical && <p>鈥?鍟嗗瀹℃牳鍚庡彂璐э紝鏀跺埌鍚庤鎻愪氦鍙嶉</p>}
-            <p>鈥?鍒嗕韩瓒婂锛岃禋寰楄秺澶氾紝杩樿兘瑙ｉ攣甯帹鎴愬氨</p>
+            {isPoints && <p>• 接受任务后，分享话题链接给好友</p>}
+            {isPoints && <p>• 好友通过你的链接访问，你获得积分奖励</p>}
+            {isPhysical && <p>• 接受任务后填写收货地址</p>}
+            {isPhysical && <p>• 商家审核后发货，收到后请提交反馈</p>}
+            <p>• 分享越多，赚得越多，还能解锁帮推成就</p>
           </div>
 
-          {/* 鍦板潃琛ㄥ崟 */}
+          {/* 地址表单 */}
           {showAddressForm && (
             <div className="mb-4 p-4 bg-white rounded-xl border border-gray-200 space-y-3">
-              <h4 className="text-sm font-bold text-gray-900">馃摤 鏀惰揣鍦板潃</h4>
+              <h4 className="text-sm font-bold text-gray-900">📬 收货地址</h4>
               <input
                 type="text"
                 value={address.name}
                 onChange={e => setAddress(a => ({ ...a, name: e.target.value }))}
-                placeholder="鏀朵欢浜哄鍚?
+                placeholder="收件人姓名"
                 className="w-full px-3 py-2.5 bg-gray-50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
               />
               <input
                 type="tel"
                 value={address.phone}
                 onChange={e => setAddress(a => ({ ...a, phone: e.target.value }))}
-                placeholder="鎵嬫満鍙?
+                placeholder="手机号"
                 className="w-full px-3 py-2.5 bg-gray-50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
               />
               <textarea
                 value={address.address}
                 onChange={e => setAddress(a => ({ ...a, address: e.target.value }))}
-                placeholder="璇︾粏鏀惰揣鍦板潃锛堢渷甯傚尯 + 琛楅亾闂ㄧ墝鍙凤級"
+                placeholder="详细收货地址（省市区 + 街道门牌号）"
                 rows={3}
                 className="w-full px-3 py-2.5 bg-gray-50 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-200"
               />
               <div className="flex gap-2">
                 <button onClick={() => setShowAddressForm(false)} className="flex-1 py-2.5 bg-gray-100 text-gray-600 rounded-xl text-sm font-medium">
-                  鍙栨秷
+                  取消
                 </button>
                 <button
                   onClick={handleSubmitAddress}
@@ -438,25 +446,27 @@ export default function TopicDetail({ user }: { user?: any }) {
                       : 'bg-gray-200 text-gray-400'
                   }`}
                 >
-                  {submittingAddress ? '鎻愪氦涓?..' : '纭鎻愪氦'}
+                  {submittingAddress ? '提交中...' : '确认提交'}
                 </button>
               </div>
             </div>
           )}
 
-          {/* 鎿嶄綔鎸夐挳 */}
+          {/* 操作按钮 */}
           <div className="flex gap-3">
             {promoted ? (
               <>
                 <button onClick={handleShare} className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold text-sm active:scale-[0.98] transition-transform">
-                  馃摛 鍒嗕韩璧氱Н鍒?                </button>
+                  📤 分享赚积分
+                </button>
                 {isPhysical && myPromote?.status === 'accepted' && !myPromote?.receiver_name && (
                   <button onClick={() => setShowAddressForm(true)} className="px-4 py-3 bg-amber-500 text-white rounded-xl font-bold text-sm active:scale-[0.98] transition-transform">
-                    馃摤 濉湴鍧€
+                    📬 填地址
                   </button>
                 )}
                 <button className="px-4 py-3 bg-white text-green-600 rounded-xl font-bold text-sm border border-green-200">
-                  鉁?宸叉帴鍙?                </button>
+                  ✅ 已接受
+                </button>
               </>
             ) : (
               <button
@@ -464,33 +474,33 @@ export default function TopicDetail({ user }: { user?: any }) {
                 disabled={accepting}
                 className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold text-sm active:scale-[0.98] transition-transform"
               >
-                {accepting ? '鎺ュ彈涓?..' : isCoupon ? `馃帿 棰嗗彇浼樻儬鍒?(+${topic.promote_reward || 20}绉垎)` : isPhysical ? `馃幆 鎺ュ彈浠诲姟 + 濉湴鍧€ (+${topic.promote_reward || 20}绉垎)` : `馃幆 鎺ュ彈鎺ㄥ箍浠诲姟 (+${topic.promote_reward || 20}绉垎)`}
+                {accepting ? '接受中...' : isCoupon ? `🎫 领取优惠券 (+${topic.promote_reward || 20}积分)` : isPhysical ? `🎯 接受任务 + 填地址 (+${topic.promote_reward || 20}积分)` : `🎯 接受推广任务 (+${topic.promote_reward || 20}积分)`}
               </button>
             )}
           </div>
         </div>
       )}
 
-      {/* 閫犳鎸夐挳 */}
+      {/* 造梗按钮 */}
       <div className="px-5 py-4">
         <button onClick={() => setShowMemeCreate(true)} className="w-full py-3 bg-black text-white rounded-2xl font-bold text-base active:scale-[0.98] transition-transform">
-          馃敟 鎴戣閫犳
+          🔥 我要造梗
         </button>
       </div>
 
-      {/* 鐑棬姊?*/}
+      {/* 热门梗 */}
       <div className="px-5">
-        <h2 className="text-lg font-bold text-gray-900 mb-3">馃敟 鐑棬姊?({memes.length})</h2>
+        <h2 className="text-lg font-bold text-gray-900 mb-3">🔥 热门梗 ({memes.length})</h2>
         {memes.length === 0 ? (
-          <div className="text-center py-8 text-gray-400">杩樻病鏈夋锛屽揩鏉ョ涓€涓€犳锛?/div>
+          <div className="text-center py-8 text-gray-400">还没有梗，快来第一个造梗！</div>
         ) : (
           <div className="space-y-3">
             {memes.map((meme, i) => (
               <div key={meme.id} className="bg-white rounded-2xl p-4 border border-gray-100">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-lg">{i === 0 ? '馃' : i === 1 ? '馃' : i === 2 ? '馃' : `#${i+1}`}</span>
+                  <span className="text-lg">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i+1}`}</span>
                   <span className={`px-2 py-0.5 text-[10px] rounded-full ${meme.status === 'viral' ? 'bg-red-50 text-red-500' : 'bg-green-50 text-green-600'}`}>
-                    {meme.status === 'viral' ? '馃敟 鐖嗘' : '宸插彂甯?}
+                    {meme.status === 'viral' ? '🔥 爆款' : '已发布'}
                   </span>
                 </div>
                 <h3 className="text-base font-bold text-gray-900 mb-1">{meme.title}</h3>
@@ -501,10 +511,10 @@ export default function TopicDetail({ user }: { user?: any }) {
                   ))}
                 </div>
                 <div className="flex gap-4 text-xs text-gray-400">
-                  <span>馃憗 {formatNum(meme.view_count)}</span>
-                  <span>鉂わ笍 {formatNum(meme.like_count)}</span>
-                  <span>馃攧 {formatNum(meme.share_count)}</span>
-                  <span>馃敟 {meme.hot_score}</span>
+                  <span>👁 {formatNum(meme.view_count)}</span>
+                  <span>❤️ {formatNum(meme.like_count)}</span>
+                  <span>🔄 {formatNum(meme.share_count)}</span>
+                  <span>🔥 {meme.hot_score}</span>
                 </div>
               </div>
             ))}
@@ -512,16 +522,16 @@ export default function TopicDetail({ user }: { user?: any }) {
         )}
       </div>
 
-      {/* 璇勮鍖?*/}
+      {/* 评论区 */}
       <div className="px-5 mt-6">
-        <h2 className="text-lg font-bold text-gray-900 mb-3">馃挰 璇勮 ({comments.length})</h2>
+        <h2 className="text-lg font-bold text-gray-900 mb-3">💬 评论 ({comments.length})</h2>
 
-        {/* 鍙戣〃璇勮 */}
+        {/* 发表评论 */}
         <div className="bg-white rounded-2xl p-4 mb-4 border border-gray-100">
           <textarea
             value={newComment}
             onChange={e => setNewComment(e.target.value)}
-            placeholder="璇磋浣犲杩欎釜璇濋鐨勭湅娉?.."
+            placeholder="说说你对这个话题的看法..."
             rows={3}
             className="w-full text-sm resize-none focus:outline-none"
           />
@@ -533,21 +543,21 @@ export default function TopicDetail({ user }: { user?: any }) {
                 newComment.trim() ? 'bg-black text-white' : 'bg-gray-200 text-gray-400'
               }`}
             >
-              {submitting ? '鍙戦€佷腑...' : '鍙戣〃 (+5绉垎)'}
+              {submitting ? '发送中...' : '发表 (+5积分)'}
             </button>
           </div>
         </div>
 
-        {/* 璇勮鍒楄〃 */}
+        {/* 评论列表 */}
         <div className="space-y-3">
           {comments.length === 0 ? (
-            <div className="text-center py-8 text-gray-400 text-sm">杩樻病鏈夎瘎璁猴紝鏉ヨ涓ゅ彞鍚?馃挰</div>
+            <div className="text-center py-8 text-gray-400 text-sm">还没有评论，来说两句吧 💬</div>
           ) : (
             comments.map(c => (
               <div key={c.id} className="bg-white rounded-xl p-4 border border-gray-100">
                 <div className="flex items-center gap-2 mb-2">
-                  <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-sm">{c.user_avatar || '馃懁'}</div>
-                  <span className="text-sm font-medium text-gray-900">{c.user_name || '鍖垮悕鐢ㄦ埛'}</span>
+                  <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-sm">{c.user_avatar || '👤'}</div>
+                  <span className="text-sm font-medium text-gray-900">{c.user_name || '匿名用户'}</span>
                   <span className="text-[11px] text-gray-400">{new Date(c.created_at).toLocaleDateString('zh-CN')}</span>
                 </div>
                 <p className="text-sm text-gray-700 leading-relaxed">{c.content}</p>
@@ -557,19 +567,16 @@ export default function TopicDetail({ user }: { user?: any }) {
         </div>
       </div>
 
-      {/* 閫犳寮圭獥 */}
+      {/* 造梗弹窗 */}
       {showMemeCreate && (
         <MemeModal
           targetTitle={topic.title}
           onClose={() => setShowMemeCreate(false)}
           onSuccess={async (meme) => {
             if (!user?.id) { navigate('/login'); return }
-            await createMeme({
-              type: meme.type,
-              title: meme.title,
-              content: meme.content,
-              hashtags: meme.hashtags,
-              topic_id: topic.id,
+            await supabase.from('memes').insert({
+              type: meme.type, title: meme.title, content: meme.content,
+              hashtags: meme.hashtags, topic_id: topic.id, creator_id: user.id,
             })
             setShowMemeCreate(false)
             fetchTopic(topic.id)

@@ -1,8 +1,7 @@
-﻿// @ts-nocheck
-// ===== 璇勮搴曢儴寮圭獥 =====
+// ===== 评论底部弹窗 =====
 
 import { useState, useEffect, useRef } from 'react'
-import { getComments, addCommentWithPoints, getUserById, getCurrentUser } from '../lib/api/client'
+import { supabase, addCommentWithPoints } from '../lib/supabase/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
 import { toast } from '../lib/toast'
 
@@ -27,6 +26,7 @@ export default function CommentSheet({ contentId, source, userId, onClose, onCom
     setTimeout(() => inputRef.current?.focus(), 300)
   }, [])
 
+  // 阻止触摸/滚轮事件冒泡到底层 FeedContainer
   useEffect(() => {
     const stop = (e: Event) => e.stopPropagation()
     const el = sheetRef.current
@@ -57,26 +57,26 @@ export default function CommentSheet({ contentId, source, userId, onClose, onCom
     else if (source === 'topic') targetType = 'topic'
     else targetType = 'content'
 
-    try {
-      const cmts = await getComments(targetType, contentId)
+    const { data: cmts } = await supabase
+      .from('comments')
+      .select('*')
+      .eq('target_type', targetType)
+      .eq('target_id', contentId)
+      .order('created_at', { ascending: false })
+      .limit(50)
 
-      const userIds = [...new Set((cmts || []).map((c: any) => c.user_id).filter(Boolean))]
-      let usersMap: Record<string, any> = {}
-      for (const uid of userIds) {
-        try {
-          const u = await getUserById(uid)
-          if (u) usersMap[uid] = u
-        } catch {}
-      }
-
-      setComments((cmts || []).map((c: any) => ({
-        ...c,
-        user_name: usersMap[c.user_id]?.name || '鍖垮悕鐢ㄦ埛',
-        user_avatar: usersMap[c.user_id]?.avatar || '馃懁',
-      })))
-    } catch (err) {
-      console.error('鍔犺浇璇勮澶辫触:', err)
+    const userIds = [...new Set((cmts || []).map(c => c.user_id).filter(Boolean))]
+    let usersMap: Record<string, any> = {}
+    if (userIds.length > 0) {
+      const { data: usersData } = await supabase.from('users').select('id, name, avatar').in('id', userIds)
+      if (usersData) usersMap = Object.fromEntries(usersData.map(u => [u.id, u]))
     }
+
+    setComments((cmts || []).map(c => ({
+      ...c,
+      user_name: usersMap[c.user_id]?.name || '匿名用户',
+      user_avatar: usersMap[c.user_id]?.avatar || '👤',
+    })))
     setLoading(false)
   }
 
@@ -86,16 +86,16 @@ export default function CommentSheet({ contentId, source, userId, onClose, onCom
 
     let uid = userId
     if (!uid) {
-      try {
-        const currentUser = await getCurrentUser()
-        uid = currentUser?.id
-      } catch {}
+      const { data: { user: authUser } } = await supabase.auth.getUser()
+      uid = authUser?.id
     }
     if (!uid) {
-      toast.warning('璇峰厛鐧诲綍')
+      toast.warning('请先登录')
       setSubmitting(false)
       return
     }
+
+    const { data: userInfo } = await supabase.from('users').select('name, avatar').eq('id', uid).single()
 
     try {
       let targetType: string
@@ -104,25 +104,16 @@ export default function CommentSheet({ contentId, source, userId, onClose, onCom
       else targetType = 'content'
 
       const inserted = await addCommentWithPoints(targetType, contentId, newComment.trim())
-
-      // 鑾峰彇褰撳墠鐢ㄦ埛淇℃伅
-      let userName = '鍖垮悕鐢ㄦ埛'
-      let userAvatar = '馃懁'
-      try {
-        const u = await getUserById(uid)
-        if (u) { userName = u.name; userAvatar = u.avatar }
-      } catch {}
-
       setComments([{
         ...inserted,
-        user_name: userName,
-        user_avatar: userAvatar,
+        user_name: userInfo?.name || '匿名用户',
+        user_avatar: userInfo?.avatar || '👤',
       }, ...comments])
       setNewComment('')
       onCommentAdded?.()
       if (uid) checkAndUnlockAchievements(uid).catch(() => {})
     } catch (e: any) {
-      toast.error(e.message || '璇勮澶辫触')
+      toast.error(e.message || '评论失败')
     }
     setSubmitting(false)
   }
@@ -148,25 +139,25 @@ export default function CommentSheet({ contentId, source, userId, onClose, onCom
 
         <div className="px-5 pb-3 border-b border-gray-100">
           <div className="flex items-center justify-between">
-            <h3 className="text-base font-bold">馃挰 璇勮 ({comments.length})</h3>
-            <button onClick={onClose} className="text-gray-400 text-xl">鉁?/button>
+            <h3 className="text-base font-bold">💬 评论 ({comments.length})</h3>
+            <button onClick={onClose} className="text-gray-400 text-xl">✕</button>
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3" style={{ maxHeight: 'calc(70vh - 160px)' }}>
           {loading ? (
-            <div className="text-center py-8 text-gray-400 text-sm">鍔犺浇涓?..</div>
+            <div className="text-center py-8 text-gray-400 text-sm">加载中...</div>
           ) : comments.length === 0 ? (
-            <div className="text-center py-8 text-gray-400 text-sm">杩樻病鏈夎瘎璁猴紝鏉ヨ涓ゅ彞鍚?馃挰</div>
+            <div className="text-center py-8 text-gray-400 text-sm">还没有评论，来说两句吧 💬</div>
           ) : (
             comments.map(c => (
               <div key={c.id} className="flex gap-3">
                 <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-sm shrink-0">
-                  {c.user_avatar || '馃懁'}
+                  {c.user_avatar || '👤'}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-sm font-medium text-gray-900">{c.user_name || '鍖垮悕鐢ㄦ埛'}</span>
+                    <span className="text-sm font-medium text-gray-900">{c.user_name || '匿名用户'}</span>
                     <span className="text-[10px] text-gray-400">{new Date(c.created_at).toLocaleDateString('zh-CN')}</span>
                   </div>
                   <p className="text-sm text-gray-700 leading-relaxed">{c.content}</p>
@@ -183,7 +174,7 @@ export default function CommentSheet({ contentId, source, userId, onClose, onCom
               value={newComment}
               onChange={e => setNewComment(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="璇磋浣犵殑鐪嬫硶..."
+              placeholder="说说你的看法..."
               rows={1}
               className="flex-1 text-sm resize-none focus:outline-none bg-gray-100 rounded-2xl px-4 py-2.5 max-h-20"
               style={{ minHeight: '40px' }}
@@ -195,7 +186,7 @@ export default function CommentSheet({ contentId, source, userId, onClose, onCom
                 newComment.trim() ? 'bg-black text-white' : 'bg-gray-200 text-gray-400'
               }`}
             >
-              {submitting ? '...' : '鈫?}
+              {submitting ? '...' : '↑'}
             </button>
           </div>
         </div>
