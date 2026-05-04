@@ -1292,7 +1292,7 @@ app.post('/api/topics/:id/promotes', authMiddleware, async (req, res) => {
     // 7. 发积分
     try {
       await earnPoints(userId, promoteReward, 'promote', `推广话题「${topic.title}」`)
-    } catch (e: any) {
+    } catch (e) {
       // 如果积分达上限，仍然允许推广但不加分
       if (!e.message?.includes('已达上限')) {
         // 回滚推广记录
