@@ -2,7 +2,7 @@
 // 巨浪 Julang - 前端 API 客户端
 // 替代 @supabase/supabase-js，调用自建后端 API
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+const API_BASE = import.meta.env.VITE_API_URL || 'http://81.70.71.132:3001'
 
 // ===== 通用请求工具 =====
 

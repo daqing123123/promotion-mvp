@@ -12,7 +12,7 @@ import { v4 as uuidv4 } from 'uuid'
 dotenv.config()
 
 const app = express()
-app.use(cors({ origin: process.env.FRONTEND_URL || '*' }))
+app.use(cors())
 app.use(express.json())
 
 const PORT = process.env.PORT || 3001

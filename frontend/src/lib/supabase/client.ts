@@ -1,10 +1,10 @@
 // ===== 巨浪 API 客户端 =====
 // 后端 API 地址通过 VITE_API_URL 环境变量配置
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+const API_BASE = import.meta.env.VITE_API_URL || 'http://81.70.71.132:3001'
 
 async function apiFetch(path: string, options: any = {}) {
-  const token = localStorage.getItem('token')
+  const token = localStorage.getItem('julang_token')
   const headers: any = { 'Content-Type': 'application/json', ...options.headers }
   if (token) headers['Authorization'] = `Bearer ${token}`
 
@@ -22,14 +22,14 @@ async function apiPut(path: string, body: any) { return apiFetch(path, { method:
 
 export async function signUp(username: string, password: string, name: string) {
   const data = await apiPost('/api/auth/register', { username, password, name })
-  localStorage.setItem('token', data.token)
+  localStorage.setItem('julang_token', data.token)
   localStorage.setItem('user', JSON.stringify(data.user))
   return { user: data.user, session: { access_token: data.token } }
 }
 
 export async function signIn(username: string, password: string) {
   const data = await apiPost('/api/auth/login', { username, password })
-  localStorage.setItem('token', data.token)
+  localStorage.setItem('julang_token', data.token)
   localStorage.setItem('user', JSON.stringify(data.user))
   return { user: data.user, session: { access_token: data.token } }
 }
@@ -40,7 +40,7 @@ export async function checkUsername(username: string) {
 }
 
 export async function signOut() {
-  localStorage.removeItem('token')
+  localStorage.removeItem('julang_token')
   localStorage.removeItem('user')
 }
 

@@ -17,7 +17,7 @@ export default function Login({ setUser }: { setUser: any }) {
     setError('')
 
     try {
-      const { user, session } = await signIn(username.trim().toLowerCase(), password)
+      const { user } = await signIn(username.trim().toLowerCase(), password)
 
       setUser({
         id: user.id,
