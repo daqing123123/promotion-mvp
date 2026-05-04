@@ -1,7 +1,7 @@
 // ===== 推广广场 — 真实数据版 =====
 
 import { useState, useEffect } from 'react'
-import { supabase, getPromoteHistory, promoteContent, toggleLikeWithPoints } from '../lib/supabase/client'
+import { getContents, getMemes, getPromoteHistory, promoteContent, toggleLikeWithPoints } from '../lib/api/client'
 import { getLevelTitle, getLevelBadge, getLevelColor, SPEND_ACTIONS } from '../lib/rewardSystem'
 import { checkAndUnlockAchievements } from '../lib/achievements'
 import PointsCenter from '../components/PointsCenter'
@@ -35,26 +35,19 @@ export default function Promote({ user, setUser, isMobile: _isMobile }: PromoteP
 
   const loadPublicData = async () => {
     setLoading(true)
-    const { data: contents } = await supabase
-      .from('contents')
-      .select('id, type, title, description, cover_url, like_count, view_count, promote_count, comment_count, creator_id')
-      .eq('status', 'published')
-      .order('like_count', { ascending: false })
-      .limit(20)
+    try {
+      const [contents, memes] = await Promise.all([
+        getContents(20, 0, 'published'),
+        getMemes({ status: 'published', limit: 20 }),
+      ])
 
-    const { data: memes } = await supabase
-      .from('memes')
-      .select('id, title, content, like_count, view_count, share_count, creator_name, creator_avatar')
-      .eq('status', 'published')
-      .order('hot_score', { ascending: false })
-      .limit(20)
+      const items = [
+        ...(contents || []).map((c: any) => ({ ...c, _source: 'contents' })),
+        ...(memes || []).map((m: any) => ({ ...m, _source: 'memes', type: 'meme' })),
+      ].sort(() => Math.random() - 0.5)
 
-    const items = [
-      ...(contents || []).map(c => ({ ...c, _source: 'contents' })),
-      ...(memes || []).map(m => ({ ...m, _source: 'memes', type: 'meme' })),
-    ].sort(() => Math.random() - 0.5)
-
-    setPromotableItems(items)
+      setPromotableItems(items)
+    } catch {}
     setLoading(false)
   }
 
@@ -67,7 +60,7 @@ export default function Promote({ user, setUser, isMobile: _isMobile }: PromoteP
   const loadMyPromotes = async () => {
     if (!user?.id) return
     try {
-      const history = await getPromoteHistory(user.id, 20)
+      const history = await getPromoteHistory(20)
       setMyPromotes(history)
     } catch {
       // ignore

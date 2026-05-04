@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase/client'
+import { getTopics, search } from '../lib/api/client'
 
 type SearchTab = 'all' | 'content' | 'topic' | 'meme'
 
@@ -23,40 +23,39 @@ export default function Search() {
   }, [])
 
   const loadHotTopics = async () => {
-    const { data } = await supabase
-      .from('topics')
-      .select('id, title, type, description, participant_count, meme_count')
-      .eq('status', 'active')
-      .order('hot_score', { ascending: false })
-      .limit(3)
-    if (data) setHotTopics(data)
+    try {
+      const data = await getTopics()
+      const topics = (data || []).slice(0, 3)
+      setHotTopics(topics)
 
-    // 从话题标题提取热门标签
-    const tags = (data || []).map(t => t.title).slice(0, 6)
-    if (tags.length < 6) {
-      // 补充一些默认标签
-      const defaults = ['国产平替', '独立音乐', '古装剧', '10元挑战', '社区英雄', '宇宙探索']
-      while (tags.length < 6 && defaults.length > 0) {
-        const tag = defaults.shift()!
-        if (!tags.includes(tag)) tags.push(tag)
+      // 从话题标题提取热门标签
+      const tags = topics.map((t: any) => t.title).slice(0, 6)
+      if (tags.length < 6) {
+        // 补充一些默认标签
+        const defaults = ['国产平替', '独立音乐', '古装剧', '10元挑战', '社区英雄', '宇宙探索']
+        while (tags.length < 6 && defaults.length > 0) {
+          const tag = defaults.shift()!
+          if (!tags.includes(tag)) tags.push(tag)
+        }
       }
-    }
-    setHotTags(tags)
+      setHotTags(tags)
+    } catch {}
   }
 
   const doSearch = async () => {
     if (!query.trim()) return
     setSearched(true)
     setLoading(true)
-    const q = `%${query.trim()}%`
-    const [cRes, tRes, mRes] = await Promise.all([
-      supabase.from('contents').select('id, type, title, description').ilike('title', q).limit(10),
-      supabase.from('topics').select('id, title, type, description, participant_count, meme_count').ilike('title', q).limit(10),
-      supabase.from('memes').select('id, title, content, like_count, view_count').ilike('title', q).limit(10),
-    ])
-    setContentResults(cRes.data || [])
-    setTopicResults(tRes.data || [])
-    setMemeResults(mRes.data || [])
+    try {
+      const results = await search(query.trim())
+      setContentResults(results.contents || [])
+      setTopicResults(results.topics || [])
+      setMemeResults(results.memes || [])
+    } catch {
+      setContentResults([])
+      setTopicResults([])
+      setMemeResults([])
+    }
     setLoading(false)
   }
 
@@ -120,7 +119,7 @@ export default function Search() {
               {hotTags.map(tag => (
                 <button
                   key={tag}
-                  onClick={() => { setQuery(tag); doSearch() }}
+                  onClick={() => { setQuery(tag); setTimeout(doSearch, 0) }}
                   className="px-3 py-1.5 bg-white border border-gray-200 text-gray-600 text-xs rounded-full"
                 >
                   {tag}

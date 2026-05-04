@@ -2,9 +2,23 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { supabase, toggleLikeWithPoints, toggleFavorite, promoteContent, addCommentWithPoints, toggleFollow, isFollowing, createNotification } from '../lib/supabase/client'
+import { getContentById, toggleLikeWithPoints, toggleFavorite, promoteContent, addCommentWithPoints, toggleFollow, isFollowing, createNotification, getComments, checkInteraction, getUserById } from '../lib/api/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
 import { toast } from '../lib/toast'
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+
+async function apiGet(path: string) {
+  const token = localStorage.getItem('julang_token')
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  })
+  if (!res.ok) throw new Error(`HTTP ${res.status}`)
+  return res.json()
+}
 
 export default function ContentDetail({ user }: { user?: any }) {
   const navigate = useNavigate()
@@ -27,41 +41,57 @@ export default function ContentDetail({ user }: { user?: any }) {
 
   const loadContent = async (contentId: string) => {
     setLoading(true)
-    let { data } = await supabase.from('contents').select('*').eq('id', contentId).single()
+    let data = null
     let source = 'contents'
-    if (!data) {
-      const res = await supabase.from('memes').select('*').eq('id', contentId).single()
-      data = res.data
-      source = 'memes'
+    try {
+      data = await getContentById(contentId)
+    } catch {
+      // 尝试作为 meme 获取
+      try {
+        data = await apiGet(`/api/memes/${contentId}`)
+        source = 'memes'
+      } catch {}
     }
     if (data) {
       setContent({ ...data, _source: source })
-      // 浏览量 +1
+      // 浏览量 +1 (fire and forget)
       const table = source === 'memes' ? 'memes' : 'contents'
-      supabase.from(table).update({ [table === 'memes' ? 'view_count' : 'view_count']: (data.view_count || 0) + 1 }).eq('id', data.id).then(() => {})
+      fetch(`${API_BASE}/api/${table}/${contentId}/view`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      }).catch(() => {})
     }
     // 加载评论
     const targetType = source === 'memes' ? 'meme' : 'content'
-    const { data: cmts } = await supabase.from('comments').select('*').eq('target_type', targetType).eq('target_id', contentId).order('created_at', { ascending: false }).limit(50)
-    const userIds = [...new Set((cmts || []).map(c => c.user_id).filter(Boolean))]
-    let usersMap: Record<string, any> = {}
-    if (userIds.length > 0) {
-      const { data: usersData } = await supabase.from('users').select('id, name, avatar').in('id', userIds)
-      if (usersData) usersMap = Object.fromEntries(usersData.map(u => [u.id, u]))
-    }
-    setComments((cmts || []).map(c => ({ ...c, user_name: usersMap[c.user_id]?.name || '匿名用户', user_avatar: usersMap[c.user_id]?.avatar || '👤' })))
+    try {
+      const cmts = await getComments(targetType, contentId)
+      const userIds = [...new Set((cmts || []).map((c: any) => c.user_id).filter(Boolean))]
+      let usersMap: Record<string, any> = {}
+      for (const uid of userIds) {
+        try {
+          const u = await getUserById(uid)
+          if (u) usersMap[uid] = u
+        } catch {}
+      }
+      setComments((cmts || []).map((c: any) => ({ ...c, user_name: usersMap[c.user_id]?.name || '匿名用户', user_avatar: usersMap[c.user_id]?.avatar || '👤' })))
+    } catch {}
     // 用户互动状态
     if (user?.id) {
-      const [likeRes, favRes, promoteRes, followRes] = await Promise.all([
-        supabase.from('interactions').select('id').eq('user_id', user.id).eq('target_type', targetType).eq('target_id', contentId).eq('action', 'like').maybeSingle(),
-        supabase.from('interactions').select('id').eq('user_id', user.id).eq('target_type', targetType).eq('target_id', contentId).eq('action', 'favorite').maybeSingle(),
-        supabase.from('promotes').select('id').eq('user_id', user.id).eq('content_id', contentId).maybeSingle(),
-        data?.creator_id ? isFollowing(user.id, data.creator_id) : Promise.resolve(false),
-      ])
-      if (likeRes.data) setLiked(true)
-      if (favRes.data) setFavorited(true)
-      if (promoteRes.data) setPromoted(true)
-      setFollowing(followRes as boolean)
+      try {
+        const [likeRes, favRes, followRes] = await Promise.all([
+          checkInteraction(targetType, contentId, 'like').catch(() => null),
+          checkInteraction(targetType, contentId, 'favorite').catch(() => null),
+          data?.creator_id ? isFollowing(user.id, data.creator_id) : Promise.resolve(false),
+        ])
+        if (likeRes) setLiked(true)
+        if (favRes) setFavorited(true)
+        setFollowing(followRes as boolean)
+        // 检查是否已帮推
+        try {
+          const promoteRes = await apiGet(`/api/promotes/check?content_id=${contentId}`)
+          if (promoteRes?.promoted) setPromoted(true)
+        } catch {}
+      } catch {}
     }
     setLoading(false)
   }
@@ -109,7 +139,7 @@ export default function ContentDetail({ user }: { user?: any }) {
     try {
       const targetType = content._source === 'memes' ? 'meme' : 'content'
       const inserted = await addCommentWithPoints(targetType, content.id, newComment.trim())
-      const { data: userInfo } = await supabase.from('users').select('name, avatar').eq('id', user.id).single()
+      const userInfo = await getUserById(user.id)
       setComments([{ ...inserted, user_name: userInfo?.name || '匿名用户', user_avatar: userInfo?.avatar || '👤' }, ...comments])
       setNewComment('')
       setContent((c: any) => ({ ...c, comment_count: (c.comment_count || 0) + 1 }))

@@ -1,7 +1,7 @@
 // ===== 投票卡片组件 =====
 
 import { useState, useEffect } from 'react'
-import { castVote, getVoteById } from '../lib/supabase/client'
+import { castVote, getVoteById } from '../lib/api/client'
 
 interface VoteOption {
   index: number

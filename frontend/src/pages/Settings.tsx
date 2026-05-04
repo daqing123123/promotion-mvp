@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase/client'
+import { signOut, getUserById } from '../lib/api/client'
 import { toast } from '../lib/toast'
 
 export default function Settings({ user, setUser }: { user: any; setUser: (u: any) => void }) {
@@ -22,18 +22,21 @@ export default function Settings({ user, setUser }: { user: any; setUser: (u: an
 
     setChangingPwd(true)
     try {
-      // 先验证旧密码
-      const { data: userRecord } = await supabase.from('users').select('email').eq('id', user.id).single()
-      const email = userRecord?.email || `${user.username}@julang.app`
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password: oldPwd,
+      // 调用后端修改密码接口（后端会验证旧密码）
+      const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+      const token = localStorage.getItem('julang_token')
+      const res = await fetch(`${API_BASE}/api/auth/change-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ old_password: oldPwd, new_password: newPwd }),
       })
-      if (signInError) { toast.error('原密码错误'); return }
-
-      // 更新密码
-      const { error } = await supabase.auth.updateUser({ password: newPwd })
-      if (error) throw error
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: '修改失败' }))
+        throw new Error(err.error || '修改失败')
+      }
 
       toast.success('密码修改成功')
       setOldPwd('')
@@ -48,14 +51,14 @@ export default function Settings({ user, setUser }: { user: any; setUser: (u: an
   }
 
   const handleLogout = async () => {
-    await supabase.auth.signOut()
+    signOut()
     setUser(null)
     localStorage.removeItem('julang_user')
     navigate('/login')
   }
 
   const handleDeleteAccount = async () => {
-    // Supabase 不支持客户端删除账号，只能提示联系客服
+    // 后端不支持客户端删除账号，只能提示联系客服
     toast.info('请联系客服处理账号注销')
     setShowDeleteConfirm(false)
   }

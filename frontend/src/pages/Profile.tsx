@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { supabase, toggleFollow, isFollowing, getFollowCounts } from '../lib/supabase/client'
+import { getUserById, toggleFollow, isFollowing, getFollowCounts, getMemesByUser, getContents, getOrCreateInviteCode, getInviteStats } from '../lib/api/client'
 import { levelTitle, levelProgress as calcLevelProgress, formatXP, xpForNextLevel } from '../lib/levels'
 import { getAchievementProgressList, AchievementDef } from '../lib/achievements'
 import { toast } from '../lib/toast'
@@ -50,13 +50,8 @@ export default function Profile({ user, setUser: _setUser }: { user: any; setUse
   const loadOtherProfile = async (uid: string) => {
     setLoading(true)
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', uid)
-        .single()
-
-      if (error || !data) {
+      const data = await getUserById(uid)
+      if (!data) {
         toast.error('用户不存在')
         navigate(-1)
         return
@@ -82,12 +77,12 @@ export default function Profile({ user, setUser: _setUser }: { user: any; setUse
   const fetchGrowthData = async () => {
     if (!user) return
     try {
-      const [codeData, countRes] = await Promise.all([
-        supabase.from('referral_codes').select('code').eq('user_id', user.id).maybeSingle(),
-        supabase.from('referrals').select('*', { count: 'exact', head: true }).eq('referrer_id', user.id),
+      const [code, stats] = await Promise.all([
+        getOrCreateInviteCode(),
+        getInviteStats(),
       ])
-      if (codeData.data) setMyCode(codeData.data.code)
-      const c = countRes.count || 0
+      setMyCode(code)
+      const c = stats.inviteCount || 0
       setInviteCount(c)
       if (c >= 50) setGrowthLevel('legend')
       else if (c >= 20) setGrowthLevel('master')
@@ -107,15 +102,17 @@ export default function Profile({ user, setUser: _setUser }: { user: any; setUse
 
   const fetchMyContents = async (uid: string) => {
     setLoading(true)
-    const [memesRes, contentsRes] = await Promise.all([
-      supabase.from('memes').select('*').eq('creator_id', uid).order('created_at', { ascending: false }),
-      supabase.from('contents').select('*').eq('creator_id', uid).order('created_at', { ascending: false }),
-    ])
-    const memes = (memesRes.data || []).map(m => ({ ...m, _source: 'memes' }))
-    const contents = (contentsRes.data || []).map(c => ({ ...c, _source: 'contents' }))
-    setMyContents([...memes, ...contents].sort((a, b) =>
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    ))
+    try {
+      const [memesRes, contentsRes] = await Promise.all([
+        getMemesByUser(uid),
+        getContents(100, 0, undefined, uid),
+      ])
+      const memes = (memesRes || []).map((m: any) => ({ ...m, _source: 'memes' }))
+      const contents = (contentsRes || []).map((c: any) => ({ ...c, _source: 'contents' }))
+      setMyContents([...memes, ...contents].sort((a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      ))
+    } catch {}
     setLoading(false)
   }
 

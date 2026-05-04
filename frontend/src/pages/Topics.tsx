@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase/client'
+import { getTopics } from '../lib/api/client'
 
 const TOPIC_TYPES = [
   { key: 'all', label: '全部', icon: '🔥' },
@@ -52,9 +52,7 @@ export default function Topics() {
 
   const fetchTopics = async (silent = false) => {
     if (!silent) setLoading(true)
-    let query = supabase.from('topics').select('*').eq('status', 'active').order('hot_score', { ascending: false })
-    if (filter !== 'all') query = query.eq('type', filter)
-    const { data } = await query
+    const data = await getTopics(filter)
     setTopics(data || [])
     setCachedTopics(filter, data || [])
     if (!silent) setLoading(false)

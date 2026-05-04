@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase, earnPoints } from '../lib/supabase/client'
+import { createTopic, createVote, createContent } from '../lib/api/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
 
 const CONTENT_TYPES = [
@@ -96,13 +96,7 @@ export default function PublishV2({ user, setUser }: { user: any; isMobile?: boo
           title: form.title.trim(),
           description: form.description.trim(),
           type: form.topicType,
-          status: 'active',
-          hot_score: 0,
-          participant_count: 0,
-          meme_count: 0,
           tags: JSON.stringify(tags),
-          created_by: user.id,
-          creator_id: user.id,
           creator_name: user.name || '',
           creator_avatar: user.avatar || '👤',
           creator_type: form.brandName.trim() ? 'brand' : 'personal',
@@ -111,7 +105,6 @@ export default function PublishV2({ user, setUser }: { user: any; isMobile?: boo
           brand_description: form.brandDescription.trim(),
           promote_reward: parseInt(form.promoteReward) || 20,
           promote_target: parseInt(form.promoteTarget) || 100,
-          promote_count: 0,
           reward_type: form.rewardType,
           reward_description: form.rewardDescription.trim(),
           coupon_type: form.rewardType === 'coupon' ? 'discount' : '',
@@ -123,31 +116,22 @@ export default function PublishV2({ user, setUser }: { user: any; isMobile?: boo
           topicData.reward_pool = parseInt(form.rewardPool)
         }
 
-        const { error: dbError } = await supabase.from('topics').insert(topicData)
-        if (dbError) throw dbError
+        await createTopic(topicData)
 
         // 投票话题
         if (form.topicType === 'vote' && form.voteOptions.trim()) {
           const options = form.voteOptions.split('\n').map(s => s.trim()).filter(Boolean)
           if (options.length >= 2) {
-            await supabase.from('votes').insert({
+            await createVote({
               title: form.title.trim(),
               description: form.description.trim(),
-              options: options.map((text, index) => ({ index, text, vote_count: 0 })),
+              options,
               vote_cost: 0,
               vote_reward: 5,
-              end_date: form.voteEndDate || null,
-              created_by: user.id,
+              end_date: form.voteEndDate || undefined,
             })
           }
         }
-
-        try {
-          const result = await earnPoints(user.id, 10, 'publish', '发布话题获得积分')
-          if (setUser && result.points !== undefined) {
-            setUser((prev: any) => prev ? { ...prev, points: result.points } : prev)
-          }
-        } catch {}
       } else {
         // 发布内容（所有类型）
         let description = form.description
@@ -170,34 +154,16 @@ export default function PublishV2({ user, setUser }: { user: any; isMobile?: boo
         if (form.linkUrl) renderConfig.link = form.linkUrl
         if (form.price) renderConfig.price = form.price
 
-        const contentData: any = {
+        await createContent({
           type: selectedType,
           title: form.title.trim(),
           description: description.trim(),
           tags,
-          creator_id: user.id,
           render_mode: renderMode,
           cover_url: coverUrl,
           render_src: renderSrc,
           render_config: renderConfig,
-          view_count: 0,
-          like_count: 0,
-          promote_count: 0,
-          share_count: 0,
-          comment_count: 0,
-          favorite_count: 0,
-          status: 'published',
-        }
-
-        const { error: dbError } = await supabase.from('contents').insert(contentData)
-        if (dbError) throw dbError
-
-        try {
-          const result = await earnPoints(user.id, 10, 'publish', '发布内容获得积分')
-          if (setUser && result.points !== undefined) {
-            setUser((prev: any) => prev ? { ...prev, points: result.points } : prev)
-          }
-        } catch {}
+        })
       }
 
       try { await checkAndUnlockAchievements(user.id) } catch {}

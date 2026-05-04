@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase, markAllNotificationsRead } from '../lib/supabase/client'
+import { getNotifications, markAllNotificationsRead } from '../lib/api/client'
 import { toast } from '../lib/toast'
 
 interface Notification {
@@ -39,14 +39,8 @@ export default function Notifications({ user }: { user: any }) {
     if (!user?.id) return
     setLoading(true)
     try {
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(50)
-
-      if (!error && data) {
+      const data = await getNotifications()
+      if (data) {
         setNotifications(data)
         // 标记所有为已读
         await markAllNotificationsRead()

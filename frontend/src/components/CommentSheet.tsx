@@ -1,7 +1,7 @@
 // ===== 评论底部弹窗 =====
 
 import { useState, useEffect, useRef } from 'react'
-import { supabase, addCommentWithPoints } from '../lib/supabase/client'
+import { getComments, addCommentWithPoints, getUserById, getCurrentUser } from '../lib/api/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
 import { toast } from '../lib/toast'
 
@@ -26,7 +26,6 @@ export default function CommentSheet({ contentId, source, userId, onClose, onCom
     setTimeout(() => inputRef.current?.focus(), 300)
   }, [])
 
-  // 阻止触摸/滚轮事件冒泡到底层 FeedContainer
   useEffect(() => {
     const stop = (e: Event) => e.stopPropagation()
     const el = sheetRef.current
@@ -57,26 +56,26 @@ export default function CommentSheet({ contentId, source, userId, onClose, onCom
     else if (source === 'topic') targetType = 'topic'
     else targetType = 'content'
 
-    const { data: cmts } = await supabase
-      .from('comments')
-      .select('*')
-      .eq('target_type', targetType)
-      .eq('target_id', contentId)
-      .order('created_at', { ascending: false })
-      .limit(50)
+    try {
+      const cmts = await getComments(targetType, contentId)
 
-    const userIds = [...new Set((cmts || []).map(c => c.user_id).filter(Boolean))]
-    let usersMap: Record<string, any> = {}
-    if (userIds.length > 0) {
-      const { data: usersData } = await supabase.from('users').select('id, name, avatar').in('id', userIds)
-      if (usersData) usersMap = Object.fromEntries(usersData.map(u => [u.id, u]))
+      const userIds = [...new Set((cmts || []).map((c: any) => c.user_id).filter(Boolean))]
+      let usersMap: Record<string, any> = {}
+      for (const uid of userIds) {
+        try {
+          const u = await getUserById(uid)
+          if (u) usersMap[uid] = u
+        } catch {}
+      }
+
+      setComments((cmts || []).map((c: any) => ({
+        ...c,
+        user_name: usersMap[c.user_id]?.name || '匿名用户',
+        user_avatar: usersMap[c.user_id]?.avatar || '👤',
+      })))
+    } catch (err) {
+      console.error('加载评论失败:', err)
     }
-
-    setComments((cmts || []).map(c => ({
-      ...c,
-      user_name: usersMap[c.user_id]?.name || '匿名用户',
-      user_avatar: usersMap[c.user_id]?.avatar || '👤',
-    })))
     setLoading(false)
   }
 
@@ -86,16 +85,16 @@ export default function CommentSheet({ contentId, source, userId, onClose, onCom
 
     let uid = userId
     if (!uid) {
-      const { data: { user: authUser } } = await supabase.auth.getUser()
-      uid = authUser?.id
+      try {
+        const currentUser = await getCurrentUser()
+        uid = currentUser?.id
+      } catch {}
     }
     if (!uid) {
       toast.warning('请先登录')
       setSubmitting(false)
       return
     }
-
-    const { data: userInfo } = await supabase.from('users').select('name, avatar').eq('id', uid).single()
 
     try {
       let targetType: string
@@ -104,10 +103,19 @@ export default function CommentSheet({ contentId, source, userId, onClose, onCom
       else targetType = 'content'
 
       const inserted = await addCommentWithPoints(targetType, contentId, newComment.trim())
+
+      // 获取当前用户信息
+      let userName = '匿名用户'
+      let userAvatar = '👤'
+      try {
+        const u = await getUserById(uid)
+        if (u) { userName = u.name; userAvatar = u.avatar }
+      } catch {}
+
       setComments([{
         ...inserted,
-        user_name: userInfo?.name || '匿名用户',
-        user_avatar: userInfo?.avatar || '👤',
+        user_name: userName,
+        user_avatar: userAvatar,
       }, ...comments])
       setNewComment('')
       onCommentAdded?.()

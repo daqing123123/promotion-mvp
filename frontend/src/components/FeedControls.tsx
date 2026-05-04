@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { type Content } from '../lib/contentData'
 import { formatStat } from '../lib/memeSystem'
-import { supabase, toggleLikeWithPoints, toggleFavorite, promoteContent, earnPoints } from '../lib/supabase/client'
+import { toggleLikeWithPoints, toggleFavorite, promoteContent, checkInteraction } from '../lib/api/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
 import { toast } from '../lib/toast'
 import CommentSheet from './CommentSheet'
@@ -18,32 +18,28 @@ export default function FeedControls({ content, user, onMeme, onModalToggle }: {
   const [promoting, setPromoting] = useState(false)
   const [promoted, setPromoted] = useState(false)
 
-  // 用 _source 判断 targetType，兜底用 type 判断
   const targetType = content._source === 'memes' ? 'meme' : 'content'
   const isMeme = content._source === 'memes'
 
-  // 弹窗状态同步到 FeedContainer
   useEffect(() => {
     onModalToggle?.(showComments)
   }, [showComments])
 
-  // 检查当前用户是否已点赞/收藏/帮推
   useEffect(() => {
     if (!user?.id) return
     const checkInteractions = async () => {
-      const [likeRes, favRes, promoteRes] = await Promise.all([
-        supabase.from('interactions').select('id').eq('user_id', user.id).eq('target_type', targetType).eq('target_id', content.id).eq('action', 'like').maybeSingle(),
-        supabase.from('interactions').select('id').eq('user_id', user.id).eq('target_type', targetType).eq('target_id', content.id).eq('action', 'favorite').maybeSingle(),
-        supabase.from('promotes').select('id').eq('user_id', user.id).eq('content_id', content.id).maybeSingle(),
-      ])
-      if (likeRes.data) setLiked(true)
-      if (favRes.data) setFavorited(true)
-      if (promoteRes.data) setPromoted(true)
+      try {
+        const [likeRes, favRes] = await Promise.all([
+          checkInteraction(targetType, content.id, 'like'),
+          checkInteraction(targetType, content.id, 'favorite'),
+        ])
+        if (likeRes.exists) setLiked(true)
+        if (favRes.exists) setFavorited(true)
+      } catch {}
     }
     checkInteractions()
   }, [user?.id, content.id, targetType])
 
-  // 同步外部数据变化
   useEffect(() => {
     setLikeCount(content.stats.likes)
     setFavCount(content.stats.favorites)
@@ -88,7 +84,7 @@ export default function FeedControls({ content, user, onMeme, onModalToggle }: {
       toast.points(20)
       checkAndUnlockAchievements(user.id).catch(() => {})
     } catch (e: any) {
-      if (e.message === '已经帮推过该内容') {
+      if (e.message?.includes('已经帮推')) {
         setPromoted(true)
       } else {
         toast.error(e.message || '帮推失败')
@@ -106,20 +102,6 @@ export default function FeedControls({ content, user, onMeme, onModalToggle }: {
       } else {
         await navigator.clipboard.writeText(url)
         toast.success('链接已复制 ✓')
-      }
-      // 分享给积分
-      if (user?.id) {
-        try {
-          await earnPoints(user.id, 3, 'share', '分享内容')
-          toast.points(3)
-        } catch {}
-      }
-      // 更新分享数
-      const table = isMeme ? 'memes' : 'contents'
-      const countField = 'share_count'
-      const { data: cur } = await supabase.from(table).select(countField).eq('id', content.id).single()
-      if (cur) {
-        await supabase.from(table).update({ [countField]: (cur[countField] || 0) + 1 }).eq('id', content.id)
       }
     } catch {}
   }

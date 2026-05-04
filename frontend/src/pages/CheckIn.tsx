@@ -1,7 +1,7 @@
 // ===== 签到页面 =====
 
 import { useState, useEffect, useCallback } from 'react'
-import { checkIn as checkInDB, getTodaySignIn, getConsecutiveDays, getSignInHistory } from '../lib/supabase/client'
+import { checkIn, getTodaySignIn, getConsecutiveDays, getSignInHistory } from '../lib/api/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
 import { toast } from '../lib/toast'
 
@@ -24,9 +24,9 @@ export default function CheckIn({ user, setUser }: CheckInProps) {
     if (!user) return
     try {
       const [todaySigned, consecutive, history] = await Promise.all([
-        getTodaySignIn(user.id),
-        getConsecutiveDays(user.id),
-        getSignInHistory(user.id, 60),
+        getTodaySignIn(),
+        getConsecutiveDays(),
+        getSignInHistory(60),
       ])
       setIsCheckedToday(todaySigned)
       setConsecutiveDays(consecutive)
@@ -46,7 +46,7 @@ export default function CheckIn({ user, setUser }: CheckInProps) {
     setLoading(true)
 
     try {
-      const result = await checkInDB(user.id)
+      const result = await checkIn()
       setIsCheckedToday(true)
       setConsecutiveDays(result.consecutiveDays)
       setRewardInfo({ points: result.pointsEarned, bonus: result.bonusPoints })

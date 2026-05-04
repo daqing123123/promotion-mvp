@@ -1,7 +1,7 @@
 // ===== 积分中心（真实数据版） =====
 
 import { useState, useEffect, useCallback } from 'react'
-import { getPointsHistory, getPointsBalance } from '../lib/supabase/client'
+import { getPointsHistory, getPointsBalance } from '../lib/api/client'
 import { getLevelTitle, getLevelBadge, getLevelColor } from '../lib/rewardSystem'
 
 interface PointsProps {
@@ -18,8 +18,8 @@ export default function Points({ user }: PointsProps) {
     if (!user) return
     try {
       const [balance, historyData] = await Promise.all([
-        getPointsBalance(user.id),
-        getPointsHistory(user.id, 50),
+        getPointsBalance(),
+        getPointsHistory(50),
       ])
       setPointsBalance(balance)
       setHistory(historyData)

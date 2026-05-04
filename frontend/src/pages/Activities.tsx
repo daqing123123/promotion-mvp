@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase, joinActivity } from '../lib/supabase/client'
+import { getActivities, joinActivity, getUserActivities } from '../lib/api/client'
 import { toast } from '../lib/toast'
 
 interface ActivitiesProps {
@@ -38,27 +38,23 @@ export default function Activities({ user, setUser: _setUser }: ActivitiesProps)
 
   const fetchActivities = async () => {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('activities')
-      .select('*')
-      .eq('status', 'active')
-      .order('created_at', { ascending: false })
-
-    if (!error && data) {
+    try {
+      const data = await getActivities('active')
       setActivities(data)
+    } catch (err) {
+      console.error('加载活动失败:', err)
     }
     setLoading(false)
   }
 
   const loadJoinedIds = async () => {
     if (!user?.id) return
-    const { data } = await supabase
-      .from('activity_participants')
-      .select('activity_id')
-      .eq('user_id', user.id)
-    if (data) {
-      setJoinedIds(new Set(data.map(d => d.activity_id)))
-    }
+    try {
+      const data = await getUserActivities()
+      if (data) {
+        setJoinedIds(new Set(data.map((d: any) => d.activity_id)))
+      }
+    } catch {}
   }
 
   const handleJoin = async (activityId: string) => {
@@ -70,7 +66,7 @@ export default function Activities({ user, setUser: _setUser }: ActivitiesProps)
 
     setJoining(activityId)
     try {
-      await joinActivity(activityId, user.id)
+      await joinActivity(activityId)
       setJoinedIds(prev => new Set([...prev, activityId]))
       setActivities(prev => prev.map(a =>
         a.id === activityId

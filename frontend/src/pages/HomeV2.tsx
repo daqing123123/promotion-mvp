@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import FeedContainer from '../components/FeedContainer'
 import MemeModal from '../components/MemeModal'
-import { supabase } from '../lib/supabase/client'
+import { getContents, getMemes, getActivities, getComments, getUserById, createMeme } from '../lib/api/client'
 import type { Content } from '../lib/contentData'
 
 interface HomeV2Props {
@@ -32,137 +32,97 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
     const currentMemeOffset = isLoadMore ? memeOffset : 0
     const currentContentOffset = isLoadMore ? contentOffset : 0
 
-    // 三个数据源并行：contents + memes + activities
-    const [contentsRes, memesRes, activitiesRes] = await Promise.all([
-      supabase.from('contents')
-        .select('id, type, title, description, cover_url, tags, creator_id, render_mode, view_count, like_count, promote_count, share_count, comment_count, favorite_count, created_at')
-        .eq('status', 'published')
-        .order('created_at', { ascending: false })
-        .range(currentContentOffset, currentContentOffset + 9),
-      supabase.from('memes')
-        .select('id, title, content, image_url, hashtags, creator_id, creator_name, creator_avatar, like_count, view_count, share_count, created_at')
-        .eq('status', 'published')
-        .order('hot_score', { ascending: false })
-        .range(currentMemeOffset, currentMemeOffset + 9),
-      // 活动只在首页加载时获取（不分页）
-      isLoadMore ? { data: [] } : supabase.from('activities')
-        .select('id, type, title, description, reward, participant_count, end_date, status, created_at')
-        .eq('status', 'active')
-        .order('created_at', { ascending: false })
-        .limit(3),
-    ])
+    try {
+      // 三个数据源并行：contents + memes + activities
+      const [newContents, newMemes, newActivities] = await Promise.all([
+        getContents(10, currentContentOffset),
+        getMemes({ limit: 10, offset: currentMemeOffset }),
+        isLoadMore ? Promise.resolve([]) : getActivities('active').catch(() => []),
+      ])
 
-    const newContents = contentsRes.data || []
-    const newMemes = memesRes.data || []
-    const newActivities = activitiesRes.data || []
+      if (newContents.length === 0 && newMemes.length === 0 && (!newActivities || newActivities.length === 0)) {
+        setHasMore(false)
+        if (!silent) setLoading(false)
+        setLoadingMore(false)
+        return
+      }
 
-    if (newContents.length === 0 && newMemes.length === 0 && newActivities.length === 0) {
-      setHasMore(false)
-      if (!silent) setLoading(false)
-      setLoadingMore(false)
-      return
-    }
+      // 获取 contents 的创作者信息
+      const contentCreatorIds = [...new Set(newContents.map((c: any) => c.creator_id).filter(Boolean))]
+      let usersMap: Record<string, any> = {}
+      for (const cid of contentCreatorIds) {
+        try {
+          const u = await getUserById(cid)
+          if (u) usersMap[cid] = u
+        } catch {}
+      }
 
-    // 获取 memes 的真实评论数
-    const memeIds = newMemes.map(m => m.id)
-    let memeCommentsMap: Record<string, number> = {}
-    if (memeIds.length > 0) {
-      const { data: memeComments } = await supabase
-        .from('comments').select('target_id').eq('target_type', 'meme').in('target_id', memeIds)
-      if (memeComments) {
-        for (const c of memeComments) {
-          memeCommentsMap[c.target_id] = (memeCommentsMap[c.target_id] || 0) + 1
+      // 转换 contents
+      const contentItems: Content[] = newContents.map((item: any) => {
+        const u = usersMap[item.creator_id] || {}
+        return {
+          id: item.id, type: item.type, title: item.title, description: item.description || '',
+          cover: item.cover_url || '/placeholder-1.svg', tags: item.tags || [],
+          _source: 'contents' as const,
+          creator: { id: item.creator_id || '', name: u.name || '用户', avatar: u.avatar || '👤', level: u.level || 1 },
+          stats: { views: item.view_count || 0, likes: item.like_count || 0, comments: item.comment_count || 0, shares: 0, favorites: item.favorite_count || 0, promotes: item.promote_count || 0 },
+          renderConfig: { mode: (item.render_mode as any) || 'card', src: '', detail: {} },
+          interactionConfig: { canLike: true, canComment: true, canShare: true, canFavorite: true, canPromote: true, canRemix: true },
+          createdAt: item.created_at,
         }
-      }
-    }
+      })
 
-    // 获取 contents 的真实评论数
-    const contentIds = newContents.map(c => c.id)
-    let contentCommentsMap: Record<string, number> = {}
-    if (contentIds.length > 0) {
-      const { data: contentComments } = await supabase
-        .from('comments').select('target_id').eq('target_type', 'content').in('target_id', contentIds)
-      if (contentComments) {
-        for (const c of contentComments) {
-          contentCommentsMap[c.target_id] = (contentCommentsMap[c.target_id] || 0) + 1
-        }
-      }
-    }
-
-    // 获取 contents 的创作者信息
-    const contentCreatorIds = [...new Set(newContents.map(c => c.creator_id).filter(Boolean))]
-    let usersMap: Record<string, any> = {}
-    if (contentCreatorIds.length > 0) {
-      const { data: usersData } = await supabase.from('users').select('id, name, avatar, level').in('id', contentCreatorIds)
-      if (usersData) usersMap = Object.fromEntries(usersData.map(u => [u.id, u]))
-    }
-
-    // 转换 contents
-    const contentItems: Content[] = newContents.map(item => {
-      const u = usersMap[item.creator_id] || {}
-      return {
-        id: item.id, type: item.type, title: item.title, description: item.description || '',
-        cover: item.cover_url || '/placeholder-1.svg', tags: item.tags || [],
-        _source: 'contents' as const,
-        creator: { id: item.creator_id || '', name: u.name || '用户', avatar: u.avatar || '👤', level: u.level || 1 },
-        stats: { views: item.view_count || 0, likes: item.like_count || 0, comments: contentCommentsMap[item.id] || 0, shares: item.share_count || 0, favorites: item.favorite_count || 0, promotes: item.promote_count || 0 },
-        renderConfig: { mode: (item.render_mode as any) || 'card', src: '', detail: {} },
-        interactionConfig: { canLike: true, canComment: true, canShare: true, canFavorite: true, canPromote: true, canRemix: true },
-        createdAt: item.created_at,
-      }
-    })
-
-    // 转换 memes
-    const memeItems: Content[] = newMemes.map(item => {
-      const u = usersMap[item.creator_id] || {}
-      return {
+      // 转换 memes
+      const memeItems: Content[] = newMemes.map((item: any) => ({
         id: item.id, type: 'content', title: item.title || item.content?.substring(0, 30) || '',
-        description: item.content || '', cover: item.image_url || '/placeholder-1.svg', tags: item.hashtags || [],
+        description: item.content || '', cover: item.cover_url || '/placeholder-1.svg', tags: item.hashtags || [],
         _source: 'memes' as const,
-        creator: { id: item.creator_id || '', name: item.creator_name || u.name || '匿名用户', avatar: item.creator_avatar || u.avatar || '👤', level: u.level || 1 },
-        stats: { views: item.view_count || 0, likes: item.like_count || 0, comments: memeCommentsMap[item.id] || 0, shares: item.share_count || 0, favorites: 0, promotes: 0 },
+        creator: { id: item.creator_id || '', name: item.creator_name || '匿名用户', avatar: item.creator_avatar || '👤', level: 1 },
+        stats: { views: 0, likes: item.like_count || 0, comments: item.comment_count || 0, shares: 0, favorites: 0, promotes: 0 },
         renderConfig: { mode: 'card', src: '', detail: {} },
         interactionConfig: { canLike: true, canComment: true, canShare: true, canFavorite: true, canPromote: true, canRemix: false },
         createdAt: item.created_at,
+      }))
+
+      // 转换 activities → Content 格式
+      const activityItems: Content[] = (newActivities || []).map((item: any) => ({
+        id: item.id,
+        type: 'content' as const,
+        title: `🎯 ${item.title}`,
+        description: `${item.description || ''}${item.reward_points ? `\n\n🎁 奖励：${item.reward_points}积分` : ''}${item.end_date ? `\n⏰ 截止：${new Date(item.end_date).toLocaleDateString('zh-CN')}` : ''}${item.current_participants ? `\n👥 ${item.current_participants}人已参与` : ''}`,
+        cover: '/placeholder-1.svg',
+        tags: ['活动', item.type],
+        creator: { id: '', name: '巨浪官方', avatar: '🌊', level: 99 },
+        stats: { views: 0, likes: 0, comments: 0, shares: 0, favorites: 0, promotes: 0 },
+        renderConfig: { mode: 'card' as const, src: '', detail: { isActivity: true, activityId: item.id, reward: item.reward_points } },
+        interactionConfig: { canLike: true, canComment: true, canShare: true, canFavorite: false, canPromote: false, canRemix: false },
+        createdAt: item.created_at,
+      }))
+
+      // 合并并随机打散
+      const allNew = [...contentItems, ...memeItems]
+      if (activityItems.length > 0 && !isLoadMore) {
+        allNew.splice(Math.min(2, allNew.length), 0, ...activityItems)
       }
-    })
+      const newItems = allNew.sort(() => Math.random() - 0.5)
 
-    // 转换 activities → Content 格式
-    const activityItems: Content[] = newActivities.map(item => ({
-      id: item.id,
-      type: 'content' as const,
-      title: `🎯 ${item.title}`,
-      description: `${item.description}${item.reward ? `\n\n🎁 奖励：${item.reward}积分` : ''}${item.end_date ? `\n⏰ 截止：${new Date(item.end_date).toLocaleDateString('zh-CN')}` : ''}${item.participant_count ? `\n👥 ${item.participant_count}人已参与` : ''}`,
-      cover: '/placeholder-1.svg',
-      tags: ['活动', item.type],
-      creator: { id: '', name: '巨浪官方', avatar: '🌊', level: 99 },
-      stats: { views: 0, likes: 0, comments: 0, shares: 0, favorites: 0, promotes: 0 },
-      renderConfig: { mode: 'card' as const, src: '', detail: { isActivity: true, activityId: item.id, reward: item.reward } },
-      interactionConfig: { canLike: true, canComment: true, canShare: true, canFavorite: false, canPromote: false, canRemix: false },
-      createdAt: item.created_at,
-    }))
+      if (isLoadMore) {
+        setContents(prev => [...prev, ...newItems])
+        setMemeOffset(currentMemeOffset + newMemes.length)
+        setContentOffset(currentContentOffset + newContents.length)
+      } else {
+        setContents(newItems)
+        setMemeOffset(newMemes.length)
+        setContentOffset(newContents.length)
+      }
 
-    // 合并并随机打散
-    const allNew = [...contentItems, ...memeItems]
-    // 活动插到前面（优先展示）
-    if (activityItems.length > 0 && !isLoadMore) {
-      allNew.splice(Math.min(2, allNew.length), 0, ...activityItems)
+      if (newItems.length < 10) setHasMore(false)
+    } catch (err) {
+      console.error('加载内容失败:', err)
+    } finally {
+      if (!silent) setLoading(false)
+      setLoadingMore(false)
     }
-    const newItems = allNew.sort(() => Math.random() - 0.5)
-
-    if (isLoadMore) {
-      setContents(prev => [...prev, ...newItems])
-      setMemeOffset(currentMemeOffset + newMemes.length)
-      setContentOffset(currentContentOffset + newContents.length)
-    } else {
-      setContents(newItems)
-      setMemeOffset(newMemes.length)
-      setContentOffset(newContents.length)
-    }
-
-    if (newItems.length < 10) setHasMore(false)
-    if (!silent) setLoading(false)
-    setLoadingMore(false)
   }
 
   const handleLoadMore = useCallback(() => {
@@ -204,9 +164,8 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
       <FeedContainer contents={contents} user={user} onMeme={(c) => setMemeTarget(c)} onLoadMore={handleLoadMore} loadingMore={loadingMore} />
       {memeTarget && (
         <MemeModal targetTitle={memeTarget.title} onClose={() => setMemeTarget(null)} onSuccess={async (meme) => {
-          const { data: { user: authUser } } = await supabase.auth.getUser()
-          if (!authUser) return
-          await supabase.from('memes').insert({ type: meme.type, title: meme.title, content: meme.content, hashtags: meme.hashtags, source_content_id: memeTarget.id, creator_id: authUser.id })
+          if (!user) return
+          await createMeme({ type: meme.type, title: meme.title, content: meme.content, hashtags: meme.hashtags, source_content_id: memeTarget.id })
           setMemeTarget(null)
         }} />
       )}

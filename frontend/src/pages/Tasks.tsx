@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { fetchTasks, joinTaskById, fetchUserTasks, autoCheckTaskCompletion, Task, TaskParticipant } from '../lib/tasks'
-import { earnPoints } from '../lib/supabase/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
 import { toast } from '../lib/toast'
 
@@ -74,14 +73,7 @@ export default function Tasks({ user, setUser }: TasksProps) {
     try {
       await joinTaskById(taskId, user.id)
 
-      try {
-        const result = await earnPoints(user.id, 10, 'task', '参与任务获得积分')
-        if (setUser && result.points !== undefined) {
-          setUser((prev: any) => prev ? { ...prev, points: result.points } : prev)
-        }
-      } catch {
-        // 积分获取失败不影响参与
-      }
+      // 积分由后端 joinTask 接口自动处理
 
       setJoinedIds(prev => new Set([...prev, taskId]))
       await loadMyTasks()

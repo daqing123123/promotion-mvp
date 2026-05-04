@@ -2,8 +2,42 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase, earnPoints, getInviteLeaderboard } from '../lib/supabase/client'
+import { getOrCreateInviteCode, getInviteStats, getInviteLeaderboard } from '../lib/api/client'
 import { toast } from '../lib/toast'
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001'
+
+async function apiPost(path: string, body: any) {
+  const token = localStorage.getItem('julang_token')
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: '请求失败' }))
+    throw new Error(err.error || `HTTP ${res.status}`)
+  }
+  return res.json()
+}
+
+async function apiGet(path: string) {
+  const token = localStorage.getItem('julang_token')
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: '请求失败' }))
+    throw new Error(err.error || `HTTP ${res.status}`)
+  }
+  return res.json()
+}
 
 const GROWTH_LEVELS = [
   { key: 'newbie', label: '新手', icon: '🌱', min: 0, color: 'text-gray-400' },
@@ -13,13 +47,6 @@ const GROWTH_LEVELS = [
   { key: 'master', label: '推广大师', icon: '🏅', min: 20, color: 'text-blue-500' },
   { key: 'legend', label: '传说推广者', icon: '👑', min: 50, color: 'text-purple-500' },
 ]
-
-function generateCode(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  let result = ''
-  for (let i = 0; i < 6; i++) result += chars[Math.floor(Math.random() * chars.length)]
-  return result
-}
 
 export default function Invite({ user }: { user: any }) {
   const navigate = useNavigate()
@@ -40,37 +67,22 @@ export default function Invite({ user }: { user: any }) {
     if (!user?.id) return
     setLoading(true)
 
-    // 获取或创建邀请码
-    let { data: codeData } = await supabase
-      .from('referral_codes')
-      .select('*')
-      .eq('user_id', user.id)
-      .maybeSingle()
+    try {
+      // 获取邀请码和统计
+      const [code, stats] = await Promise.all([
+        getOrCreateInviteCode(),
+        getInviteStats(),
+      ])
+      setMyCode(code)
+      setInviteCount(stats.inviteCount || 0)
+      setTotalBonus(stats.totalBonus || 0)
 
-    if (!codeData) {
-      const code = generateCode()
-      const { data: newCode } = await supabase
-        .from('referral_codes')
-        .insert({ user_id: user.id, code })
-        .select()
-        .single()
-      codeData = newCode
-    }
-
-    if (codeData) setMyCode(codeData.code)
-
-    // 获取邀请统计
-    const { data: referrals } = await supabase
-      .from('referrals')
-      .select('*, referred:referred_id(id, name, avatar, created_at)')
-      .eq('referrer_id', user.id)
-      .order('created_at', { ascending: false })
-
-    if (referrals) {
-      setInviteCount(referrals.length)
-      setTotalBonus(referrals.reduce((s, r) => s + (r.referrer_reward || 0), 0))
-      setRecentInvites(referrals.slice(0, 10))
-    }
+      // 获取最近邀请列表
+      try {
+        const referrals = await apiGet('/api/invite/referrals')
+        setRecentInvites((referrals || []).slice(0, 10))
+      } catch {}
+    } catch {}
 
     setLoading(false)
 
@@ -101,66 +113,7 @@ export default function Invite({ user }: { user: any }) {
     }
     setClaiming(true)
     try {
-      // 查找邀请码
-      const { data: codeData } = await supabase
-        .from('referral_codes')
-        .select('*')
-        .eq('code', inputCode.trim().toUpperCase())
-        .single()
-
-      if (!codeData) {
-        toast.error('邀请码不存在')
-        return
-      }
-
-      // 检查是否已被邀请
-      const { data: existing } = await supabase
-        .from('referrals')
-        .select('id')
-        .eq('referred_id', user.id)
-        .maybeSingle()
-
-      if (existing) {
-        toast.warning('你已经使用过邀请码了')
-        return
-      }
-
-      // 计算加成
-      const isMerchant = user.role === 'merchant' || user.user_type === 'brand'
-      const bonusType = isMerchant ? 'promote_boost' : 'lottery_boost'
-      const bonusValue = isMerchant ? 1.5 : 1.5
-
-      // 创建邀请记录
-      const { error } = await supabase.from('referrals').insert({
-        referrer_id: codeData.user_id,
-        referred_id: user.id,
-        referral_code: inputCode.trim().toUpperCase(),
-        status: 'registered',
-        referrer_reward: 100,
-        referred_reward: 50,
-        bonus_type: bonusType,
-        bonus_value: bonusValue,
-      })
-
-      if (error) {
-        if (error.code === '23505') {
-          toast.warning('你已经使用过邀请码了')
-        } else {
-          throw error
-        }
-        return
-      }
-
-      // 给被邀请人奖励
-      try {
-        await earnPoints(user.id, 50, 'invite', `使用邀请码 ${inputCode.trim().toUpperCase()}`)
-      } catch {}
-
-      // 更新邀请码使用次数
-      await supabase.from('referral_codes')
-        .update({ uses_count: (codeData.uses_count || 0) + 1 })
-        .eq('id', codeData.id)
-
+      await apiPost('/api/invite/apply', { code: inputCode.trim().toUpperCase() })
       toast.success('🎉 邀请码使用成功！+50积分')
       setInputCode('')
       loadInviteData()
@@ -333,20 +286,20 @@ export default function Invite({ user }: { user: any }) {
         <div className="mx-5 mt-4 bg-white rounded-2xl p-5 border border-gray-100">
           <h3 className="text-sm font-bold text-gray-900 mb-3">👥 最近邀请 ({inviteCount})</h3>
           <div className="space-y-3">
-            {recentInvites.map(invite => (
+            {recentInvites.map((invite: any) => (
               <div key={invite.id} className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-sm">
-                  {invite.referred?.avatar || '👤'}
+                  {invite.referred?.avatar || invite.referred_avatar || '👤'}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-gray-900 truncate">
-                    {invite.referred?.name || '新用户'}
+                    {invite.referred?.name || invite.referred_name || '新用户'}
                   </div>
                   <div className="text-xs text-gray-400">
                     {new Date(invite.created_at).toLocaleDateString('zh-CN')}
                   </div>
                 </div>
-                <div className="text-xs text-green-500 font-medium">+{invite.referrer_reward}积分</div>
+                <div className="text-xs text-green-500 font-medium">+{invite.referrer_reward || 100}积分</div>
               </div>
             ))}
           </div>
@@ -358,7 +311,7 @@ export default function Invite({ user }: { user: any }) {
         <div className="mx-5 mt-4 bg-white rounded-2xl p-5 border border-gray-100">
           <h3 className="text-sm font-bold text-gray-900 mb-3">🏅 邀请排行榜</h3>
           <div className="space-y-2">
-            {leaderboard.map(item => (
+            {leaderboard.map((item: any) => (
               <div key={item.userId} className={`flex items-center gap-3 p-2 rounded-lg ${item.userId === user?.id ? 'bg-purple-50' : ''}`}>
                 <span className={`text-sm font-bold w-6 text-center ${item.rank <= 3 ? 'text-orange-500' : 'text-gray-400'}`}>
                   {item.rank <= 3 ? ['🥇', '🥈', '🥉'][item.rank - 1] : `#${item.rank}`}
