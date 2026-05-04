@@ -8,12 +8,12 @@ import { getAchievementProgressList, AchievementDef } from '../lib/achievements'
 import { toast } from '../lib/toast'
 
 const GROWTH_LEVELS: Record<string, { name: string; icon: string; color: string }> = {
-  newbie: { name: '鏂版墜', icon: '馃尡', color: 'text-gray-500' },
-  starter: { name: '鍏ラ棬', icon: '馃尶', color: 'text-green-500' },
-  promoter: { name: '鎺ㄥ箍杈句汉', icon: '馃尦', color: 'text-blue-500' },
-  expert: { name: '璧勬繁杈句汉', icon: '猸?, color: 'text-yellow-500' },
-  master: { name: '澶у笀', icon: '馃憫', color: 'text-purple-500' },
-  legend: { name: '浼犲', icon: '馃弳', color: 'text-orange-500' },
+  newbie: { name: '新手', icon: '🌱', color: 'text-gray-500' },
+  starter: { name: '入门', icon: '🌿', color: 'text-green-500' },
+  promoter: { name: '推广达人', icon: '📢', color: 'text-blue-500' },
+  expert: { name: '资深达人', icon: '🦊', color: 'text-yellow-500' },
+  master: { name: '大师', icon: '👑', color: 'text-purple-500' },
+  legend: { name: '传奇', icon: '🏆', color: 'text-orange-500' },
 }
 
 export default function Profile({ user, setUser: _setUser }: { user: any; setUser: (u: any) => void }) {
