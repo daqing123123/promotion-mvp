@@ -1,8 +1,8 @@
-// ===== 积分中心 — 所有赚积分的方式 =====
+﻿// ===== 绉垎涓績 鈥?鎵€鏈夎禋绉垎鐨勬柟寮?=====
 
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase, getTodayShareCount, getTodaySignIn } from '../lib/supabase/client'
+import { getTodayShareCount, getTodaySignIn, getPointLogsCount } from '../lib/api/client'
 
 interface PointTask {
   id: string
@@ -36,48 +36,48 @@ export default function PointsCenter({ user }: { user: any }) {
       setTodayShared(shareCount)
       setTodaySigned(signed)
 
-      // 今日点赞/评论数
+      // 浠婃棩鐐硅禐/璇勮鏁?
       const today = new Date().toISOString().split('T')[0]
       const [likes, comments] = await Promise.all([
-        supabase.from('point_logs').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('type', 'like').gte('created_at', today + 'T00:00:00'),
-        supabase.from('point_logs').select('*', { count: 'exact', head: true }).eq('user_id', user.id).eq('type', 'comment').gte('created_at', today + 'T00:00:00'),
-      ])
-      setTodayLikes(likes.count || 0)
-      setTodayComments(comments.count || 0)
+        getPointLogsCount(user.id, 'like', today),
+        getPointLogsCount(user.id, 'comment', today),
+      ]).catch(() => [0, 0])
+      setTodayLikes(typeof likes === 'number' ? likes : 0)
+      setTodayComments(typeof comments === 'number' ? comments : 0)
     } catch {}
   }
 
   const dailyTasks: PointTask[] = [
-    { id: 'signin', icon: '📅', name: '每日签到', desc: todaySigned ? '今日已签到' : '连续签到更多天数，奖励越高', points: todaySigned ? 0 : 10, limit: '每日1次', done: todaySigned, action: () => navigate('/checkin') },
-    { id: 'share', icon: '📤', name: '分享内容', desc: `今日已分享 ${todayShared}/10 次`, points: 3, limit: '每日10次', done: todayShared >= 10 },
-    { id: 'like', icon: '❤️', name: '点赞内容', desc: `今日已点赞 ${todayLikes}/25 次`, points: 5, limit: '每日25次', done: todayLikes >= 25 },
-    { id: 'comment', icon: '💬', name: '评论内容', desc: `今日已评论 ${todayComments}/5 次`, points: 5, limit: '每日5次', done: todayComments >= 5 },
-    { id: 'promote', icon: '🔥', name: '帮推内容', desc: '帮推好内容，赚积分', points: 20, limit: '每日5次', done: false },
+    { id: 'signin', icon: '馃搮', name: '姣忔棩绛惧埌', desc: todaySigned ? '浠婃棩宸茬鍒? : '杩炵画绛惧埌鏇村澶╂暟锛屽鍔辫秺楂?, points: todaySigned ? 0 : 10, limit: '姣忔棩1娆?, done: todaySigned, action: () => navigate('/checkin') },
+    { id: 'share', icon: '馃摛', name: '鍒嗕韩鍐呭', desc: `浠婃棩宸插垎浜?${todayShared}/10 娆, points: 3, limit: '姣忔棩10娆?, done: todayShared >= 10 },
+    { id: 'like', icon: '鉂わ笍', name: '鐐硅禐鍐呭', desc: `浠婃棩宸茬偣璧?${todayLikes}/25 娆, points: 5, limit: '姣忔棩25娆?, done: todayLikes >= 25 },
+    { id: 'comment', icon: '馃挰', name: '璇勮鍐呭', desc: `浠婃棩宸茶瘎璁?${todayComments}/5 娆, points: 5, limit: '姣忔棩5娆?, done: todayComments >= 5 },
+    { id: 'promote', icon: '馃敟', name: '甯帹鍐呭', desc: '甯帹濂藉唴瀹癸紝璧氱Н鍒?, points: 20, limit: '姣忔棩5娆?, done: false },
   ]
 
   const bonusTasks: PointTask[] = [
-    { id: 'invite', icon: '👥', name: '邀请好友注册', desc: '好友用你的码注册，双方都得积分', points: 100, limit: '无上限', done: false, action: () => navigate('/invite') },
-    { id: 'publish', icon: '✏️', name: '发布内容', desc: '发布原创内容', points: 50, limit: '每日3次', done: false, action: () => navigate('/publish') },
-    { id: 'viral', icon: '🚀', name: '内容爆了', desc: '内容获得100+点赞', points: 500, limit: '自动触发', done: false },
-    { id: 'achievement', icon: '🏆', name: '解锁成就', desc: '完成成就获得额外积分', points: 100, limit: '按成就', done: false, action: () => navigate('/profile') },
+    { id: 'invite', icon: '馃懃', name: '閭€璇峰ソ鍙嬫敞鍐?, desc: '濂藉弸鐢ㄤ綘鐨勭爜娉ㄥ唽锛屽弻鏂归兘寰楃Н鍒?, points: 100, limit: '鏃犱笂闄?, done: false, action: () => navigate('/invite') },
+    { id: 'publish', icon: '鉁忥笍', name: '鍙戝竷鍐呭', desc: '鍙戝竷鍘熷垱鍐呭', points: 50, limit: '姣忔棩3娆?, done: false, action: () => navigate('/publish') },
+    { id: 'viral', icon: '馃殌', name: '鍐呭鐖嗕簡', desc: '鍐呭鑾峰緱100+鐐硅禐', points: 500, limit: '鑷姩瑙﹀彂', done: false },
+    { id: 'achievement', icon: '馃弳', name: '瑙ｉ攣鎴愬氨', desc: '瀹屾垚鎴愬氨鑾峰緱棰濆绉垎', points: 100, limit: '鎸夋垚灏?, done: false, action: () => navigate('/profile') },
   ]
 
   return (
     <div className="bg-gray-50 min-h-screen pb-20">
-      {/* 头部 */}
+      {/* 澶撮儴 */}
       <div className="bg-gradient-to-br from-yellow-500 to-orange-500 px-5 pt-12 pb-8 text-white">
-        <button onClick={() => navigate(-1)} className="text-white/70 mb-4">← 返回</button>
-        <h1 className="text-2xl font-bold mb-1">积分中心</h1>
-        <p className="text-white/70 text-sm">做任务赚积分，积分可兑换奖励</p>
+        <button onClick={() => navigate(-1)} className="text-white/70 mb-4">鈫?杩斿洖</button>
+        <h1 className="text-2xl font-bold mb-1">绉垎涓績</h1>
+        <p className="text-white/70 text-sm">鍋氫换鍔¤禋绉垎锛岀Н鍒嗗彲鍏戞崲濂栧姳</p>
         <div className="mt-4 bg-white/10 backdrop-blur-xl rounded-2xl p-5 text-center">
           <div className="text-4xl font-bold">{user?.points || 0}</div>
-          <div className="text-xs text-white/60 mt-1">当前积分</div>
+          <div className="text-xs text-white/60 mt-1">褰撳墠绉垎</div>
         </div>
       </div>
 
-      {/* 每日任务 */}
+      {/* 姣忔棩浠诲姟 */}
       <div className="mx-5 -mt-4 bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-        <h3 className="text-sm font-bold text-gray-900 mb-3">📋 每日任务</h3>
+        <h3 className="text-sm font-bold text-gray-900 mb-3">馃搵 姣忔棩浠诲姟</h3>
         <div className="space-y-3">
           {dailyTasks.map(task => (
             <div key={task.id} className="flex items-center gap-3">
@@ -88,7 +88,7 @@ export default function PointsCenter({ user }: { user: any }) {
               </div>
               <div className="text-right">
                 {task.done ? (
-                  <span className="text-xs text-green-500 font-medium">✓ 完成</span>
+                  <span className="text-xs text-green-500 font-medium">鉁?瀹屾垚</span>
                 ) : (
                   <div>
                     <div className="text-sm font-bold text-orange-500">+{task.points}</div>
@@ -98,7 +98,7 @@ export default function PointsCenter({ user }: { user: any }) {
               </div>
               {task.action && !task.done && (
                 <button onClick={task.action} className="px-3 py-1.5 bg-orange-50 text-orange-600 text-xs rounded-lg font-medium">
-                  去做
+                  鍘诲仛
                 </button>
               )}
             </div>
@@ -106,9 +106,9 @@ export default function PointsCenter({ user }: { user: any }) {
         </div>
       </div>
 
-      {/* 额外奖励 */}
+      {/* 棰濆濂栧姳 */}
       <div className="mx-5 mt-4 bg-white rounded-2xl p-5 border border-gray-100">
-        <h3 className="text-sm font-bold text-gray-900 mb-3">🎁 额外奖励</h3>
+        <h3 className="text-sm font-bold text-gray-900 mb-3">馃巵 棰濆濂栧姳</h3>
         <div className="space-y-3">
           {bonusTasks.map(task => (
             <div key={task.id} className="flex items-center gap-3">
@@ -123,7 +123,7 @@ export default function PointsCenter({ user }: { user: any }) {
               </div>
               {task.action && (
                 <button onClick={task.action} className="px-3 py-1.5 bg-purple-50 text-purple-600 text-xs rounded-lg font-medium">
-                  去做
+                  鍘诲仛
                 </button>
               )}
             </div>
@@ -131,17 +131,18 @@ export default function PointsCenter({ user }: { user: any }) {
         </div>
       </div>
 
-      {/* 积分规则 */}
+      {/* 绉垎瑙勫垯 */}
       <div className="mx-5 mt-4 bg-white rounded-2xl p-5 border border-gray-100">
-        <h3 className="text-sm font-bold text-gray-900 mb-3">📖 积分规则</h3>
+        <h3 className="text-sm font-bold text-gray-900 mb-3">馃摉 绉垎瑙勫垯</h3>
         <div className="space-y-2 text-xs text-gray-500">
-          <p>• 每日积分上限 500 积分</p>
-          <p>• 同一内容重复点赞/分享不重复计分</p>
-          <p>• 邀请好友注册无上限</p>
-          <p>• 内容爆款奖励自动触发</p>
-          <p>• 积分可用于兑换优惠券、参与投票、兑换实物奖品</p>
+          <p>鈥?姣忔棩绉垎涓婇檺 500 绉垎</p>
+          <p>鈥?鍚屼竴鍐呭閲嶅鐐硅禐/鍒嗕韩涓嶉噸澶嶈鍒?/p>
+          <p>鈥?閭€璇峰ソ鍙嬫敞鍐屾棤涓婇檺</p>
+          <p>鈥?鍐呭鐖嗘濂栧姳鑷姩瑙﹀彂</p>
+          <p>鈥?绉垎鍙敤浜庡厬鎹紭鎯犲埜銆佸弬涓庢姇绁ㄣ€佸厬鎹㈠疄鐗╁鍝?/p>
         </div>
       </div>
     </div>
   )
 }
+

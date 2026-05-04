@@ -2,7 +2,20 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase, earnPoints, getInviteLeaderboard } from '../lib/supabase/client'
+import { getOrCreateInviteCode, getInviteStats, getInviteLeaderboard } from '../lib/api/client'
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://81.70.71.132:3001'
+async function post(path, body) {
+  const token = localStorage.getItem('julang_token')
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(body),
+  })
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+  return data
+}
 import { toast } from '../lib/toast'
 
 const GROWTH_LEVELS = [
@@ -41,36 +54,20 @@ export default function Invite({ user }: { user: any }) {
     setLoading(true)
 
     // 获取或创建邀请码
-    let { data: codeData } = await supabase
-      .from('referral_codes')
-      .select('*')
-      .eq('user_id', user.id)
-      .maybeSingle()
-
-    if (!codeData) {
-      const code = generateCode()
-      const { data: newCode } = await supabase
-        .from('referral_codes')
-        .insert({ user_id: user.id, code })
-        .select()
-        .single()
-      codeData = newCode
-    }
-
-    if (codeData) setMyCode(codeData.code)
+    try {
+      const code = await getOrCreateInviteCode()
+      if (code) setMyCode(code)
+    } catch {}
 
     // 获取邀请统计
-    const { data: referrals } = await supabase
-      .from('referrals')
-      .select('*, referred:referred_id(id, name, avatar, created_at)')
-      .eq('referrer_id', user.id)
-      .order('created_at', { ascending: false })
-
-    if (referrals) {
-      setInviteCount(referrals.length)
-      setTotalBonus(referrals.reduce((s, r) => s + (r.referrer_reward || 0), 0))
-      setRecentInvites(referrals.slice(0, 10))
-    }
+    try {
+      const stats = await getInviteStats()
+      if (stats) {
+        setInviteCount(stats.inviteCount || 0)
+        setTotalBonus(stats.totalBonus || 0)
+        setRecentInvites((stats.recentInvites || []).slice(0, 10))
+      }
+    } catch {}
 
     setLoading(false)
 
@@ -101,71 +98,18 @@ export default function Invite({ user }: { user: any }) {
     }
     setClaiming(true)
     try {
-      // 查找邀请码
-      const { data: codeData } = await supabase
-        .from('referral_codes')
-        .select('*')
-        .eq('code', inputCode.trim().toUpperCase())
-        .single()
-
-      if (!codeData) {
-        toast.error('邀请码不存在')
-        return
-      }
-
-      // 检查是否已被邀请
-      const { data: existing } = await supabase
-        .from('referrals')
-        .select('id')
-        .eq('referred_id', user.id)
-        .maybeSingle()
-
-      if (existing) {
-        toast.warning('你已经使用过邀请码了')
-        return
-      }
-
-      // 计算加成
-      const isMerchant = user.role === 'merchant' || user.user_type === 'brand'
-      const bonusType = isMerchant ? 'promote_boost' : 'lottery_boost'
-      const bonusValue = isMerchant ? 1.5 : 1.5
-
-      // 创建邀请记录
-      const { error } = await supabase.from('referrals').insert({
-        referrer_id: codeData.user_id,
-        referred_id: user.id,
-        referral_code: inputCode.trim().toUpperCase(),
-        status: 'registered',
-        referrer_reward: 100,
-        referred_reward: 50,
-        bonus_type: bonusType,
-        bonus_value: bonusValue,
+      await post('/api/invite/claim', {
+        code: inputCode.trim().toUpperCase(),
       })
-
-      if (error) {
-        if (error.code === '23505') {
-          toast.warning('你已经使用过邀请码了')
-        } else {
-          throw error
-        }
-        return
-      }
-
-      // 给被邀请人奖励
-      try {
-        await earnPoints(user.id, 50, 'invite', `使用邀请码 ${inputCode.trim().toUpperCase()}`)
-      } catch {}
-
-      // 更新邀请码使用次数
-      await supabase.from('referral_codes')
-        .update({ uses_count: (codeData.uses_count || 0) + 1 })
-        .eq('id', codeData.id)
-
       toast.success('🎉 邀请码使用成功！+50积分')
       setInputCode('')
       loadInviteData()
     } catch (e: any) {
-      toast.error(e.message || '使用邀请码失败')
+      if (e.message?.includes('已使用') || e.message?.includes('不存在')) {
+        toast.error(e.message)
+      } else {
+        toast.error(e.message || '使用邀请码失败')
+      }
     } finally {
       setClaiming(false)
     }

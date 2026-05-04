@@ -1,8 +1,8 @@
-// ===== 活动中心 =====
+﻿// ===== 娲诲姩涓績 =====
 
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase, joinActivity } from '../lib/supabase/client'
+import { joinActivity, getActivities, getUserActivities } from '../lib/api/client'
 import { toast } from '../lib/toast'
 
 interface ActivitiesProps {
@@ -38,27 +38,15 @@ export default function Activities({ user, setUser: _setUser }: ActivitiesProps)
 
   const fetchActivities = async () => {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('activities')
-      .select('*')
-      .eq('status', 'active')
-      .order('created_at', { ascending: false })
-
-    if (!error && data) {
-      setActivities(data)
-    }
+    const data = await getActivities('active')
+    if (data) setActivities(data)
     setLoading(false)
   }
 
   const loadJoinedIds = async () => {
     if (!user?.id) return
-    const { data } = await supabase
-      .from('activity_participants')
-      .select('activity_id')
-      .eq('user_id', user.id)
-    if (data) {
-      setJoinedIds(new Set(data.map(d => d.activity_id)))
-    }
+    const data = await getUserActivities()
+    if (data) setJoinedIds(new Set(data.map((d: any) => d.activity_id)))
   }
 
   const handleJoin = async (activityId: string) => {
@@ -77,25 +65,25 @@ export default function Activities({ user, setUser: _setUser }: ActivitiesProps)
           ? { ...a, participant_count: a.participant_count + 1 }
           : a
       ))
-      toast.success('参与成功！+10积分')
+      toast.success('鍙備笌鎴愬姛锛?10绉垎')
     } catch (e: any) {
-      toast.error(e.message || '参与失败')
+      toast.error(e.message || '鍙備笌澶辫触')
     } finally {
       setJoining(null)
     }
   }
 
   const typeIcons: Record<string, string> = {
-    promote: '📢',
-    create: '✍️',
-    vote: '🗳️',
-    trial: '📦',
+    promote: '馃摙',
+    create: '鉁嶏笍',
+    vote: '馃棾锔?,
+    trial: '馃摝',
   }
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-400">加载中...</div>
+        <div className="text-gray-400">鍔犺浇涓?..</div>
       </div>
     )
   }
@@ -103,28 +91,28 @@ export default function Activities({ user, setUser: _setUser }: ActivitiesProps)
   return (
     <div className="min-h-screen bg-gray-50 pb-20">
       <div className="bg-white px-4 py-4 border-b">
-        <h1 className="text-lg font-bold">🎯 活动中心</h1>
-        <p className="text-xs text-gray-400 mt-1">参与活动赢积分</p>
+        <h1 className="text-lg font-bold">馃幆 娲诲姩涓績</h1>
+        <p className="text-xs text-gray-400 mt-1">鍙備笌娲诲姩璧㈢Н鍒?/p>
       </div>
 
       {activities.length === 0 ? (
         <div className="text-center py-20">
-          <div className="text-4xl mb-3">🎯</div>
-          <p className="text-gray-400 text-sm">暂无活动</p>
+          <div className="text-4xl mb-3">馃幆</div>
+          <p className="text-gray-400 text-sm">鏆傛棤娲诲姩</p>
         </div>
       ) : (
         <div className="p-4 space-y-3">
           {activities.map((a) => (
             <div key={a.id} className="bg-white rounded-xl p-4 shadow-sm">
               <div className="flex items-start gap-3">
-                <div className="text-3xl">{typeIcons[a.type] || '🎯'}</div>
+                <div className="text-3xl">{typeIcons[a.type] || '馃幆'}</div>
                 <div className="flex-1">
                   <h3 className="font-medium text-sm">{a.title}</h3>
                   <p className="text-xs text-gray-500 mt-1 line-clamp-2">{a.description}</p>
                   <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
-                    <span>💰 {a.reward} 积分</span>
-                    <span>👥 {a.participant_count} 人参与</span>
-                    {a.end_date && <span>⏰ 截止 {new Date(a.end_date).toLocaleDateString()}</span>}
+                    <span>馃挵 {a.reward} 绉垎</span>
+                    <span>馃懃 {a.participant_count} 浜哄弬涓?/span>
+                    {a.end_date && <span>鈴?鎴 {new Date(a.end_date).toLocaleDateString()}</span>}
                   </div>
                 </div>
                 <button
@@ -138,7 +126,7 @@ export default function Activities({ user, setUser: _setUser }: ActivitiesProps)
                         : 'bg-blue-500 text-white'
                   }`}
                 >
-                  {joinedIds.has(a.id) ? '已参与' : joining === a.id ? '...' : '参与'}
+                  {joinedIds.has(a.id) ? '宸插弬涓? : joining === a.id ? '...' : '鍙備笌'}
                 </button>
               </div>
             </div>
@@ -148,3 +136,4 @@ export default function Activities({ user, setUser: _setUser }: ActivitiesProps)
     </div>
   )
 }
+

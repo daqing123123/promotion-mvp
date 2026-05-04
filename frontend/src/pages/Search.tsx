@@ -1,8 +1,8 @@
-// ===== 搜索页面（真实数据版） =====
+﻿// ===== 鎼滅储椤甸潰锛堢湡瀹炴暟鎹増锛?=====
 
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase/client'
+import { search, getTopics } from '../lib/api/client'
 
 type SearchTab = 'all' | 'content' | 'topic' | 'meme'
 
@@ -23,19 +23,14 @@ export default function Search() {
   }, [])
 
   const loadHotTopics = async () => {
-    const { data } = await supabase
-      .from('topics')
-      .select('id, title, type, description, participant_count, meme_count')
-      .eq('status', 'active')
-      .order('hot_score', { ascending: false })
-      .limit(3)
-    if (data) setHotTopics(data)
+    const data = await getTopics().catch(() => [])
+    if (Array.isArray(data)) setHotTopics(data)
 
-    // 从话题标题提取热门标签
+    // 浠庤瘽棰樻爣棰樻彁鍙栫儹闂ㄦ爣绛?
     const tags = (data || []).map(t => t.title).slice(0, 6)
     if (tags.length < 6) {
-      // 补充一些默认标签
-      const defaults = ['国产平替', '独立音乐', '古装剧', '10元挑战', '社区英雄', '宇宙探索']
+      // 琛ュ厖涓€浜涢粯璁ゆ爣绛?
+      const defaults = ['鍥戒骇骞虫浛', '鐙珛闊充箰', '鍙よ鍓?, '10鍏冩寫鎴?, '绀惧尯鑻遍泟', '瀹囧畽鎺㈢储']
       while (tags.length < 6 && defaults.length > 0) {
         const tag = defaults.shift()!
         if (!tags.includes(tag)) tags.push(tag)
@@ -50,13 +45,13 @@ export default function Search() {
     setLoading(true)
     const q = `%${query.trim()}%`
     const [cRes, tRes, mRes] = await Promise.all([
-      supabase.from('contents').select('id, type, title, description').ilike('title', q).limit(10),
-      supabase.from('topics').select('id, title, type, description, participant_count, meme_count').ilike('title', q).limit(10),
-      supabase.from('memes').select('id, title, content, like_count, view_count').ilike('title', q).limit(10),
+      search(query.trim()).catch(() => ({})),
+      search(query.trim()).catch(() => ({})),
+      search(query.trim()).catch(() => ({})),
     ])
-    setContentResults(cRes.data || [])
-    setTopicResults(tRes.data || [])
-    setMemeResults(mRes.data || [])
+    setContentResults(Array.isArray(cRes?.contents) ? cRes.contents : [])
+    setTopicResults(Array.isArray(tRes?.topics) ? tRes.topics : [])
+    setMemeResults(Array.isArray(mRes?.memes) ? mRes.memes : [])
     setLoading(false)
   }
 
@@ -64,7 +59,7 @@ export default function Search() {
 
   return (
     <div className="bg-gray-50 min-h-screen pb-20">
-      {/* 搜索栏 */}
+      {/* 鎼滅储鏍?*/}
       <div className="bg-white px-5 pt-12 pb-4">
         <div className="flex items-center gap-3">
           <div className="flex-1 relative">
@@ -73,7 +68,7 @@ export default function Search() {
               value={query}
               onChange={e => setQuery(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && doSearch()}
-              placeholder="搜索话题、内容、梗..."
+              placeholder="鎼滅储璇濋銆佸唴瀹广€佹..."
               className="w-full pl-10 pr-4 py-3 bg-gray-50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-200"
             />
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -81,20 +76,20 @@ export default function Search() {
             </svg>
           </div>
           <button onClick={doSearch} className="px-4 py-3 bg-black text-white text-sm rounded-xl">
-            搜索
+            鎼滅储
           </button>
         </div>
       </div>
 
-      {/* 筛选 */}
+      {/* 绛涢€?*/}
       {searched && (
         <div className="bg-white px-5 py-3 border-b border-gray-100">
           <div className="flex gap-2">
             {[
-              { key: 'all' as SearchTab, label: '全部' },
-              { key: 'content' as SearchTab, label: '内容' },
-              { key: 'topic' as SearchTab, label: '话题' },
-              { key: 'meme' as SearchTab, label: '梗' },
+              { key: 'all' as SearchTab, label: '鍏ㄩ儴' },
+              { key: 'content' as SearchTab, label: '鍐呭' },
+              { key: 'topic' as SearchTab, label: '璇濋' },
+              { key: 'meme' as SearchTab, label: '姊? },
             ].map(t => (
               <button
                 key={t.key}
@@ -110,12 +105,12 @@ export default function Search() {
         </div>
       )}
 
-      {/* 结果 */}
+      {/* 缁撴灉 */}
       <div className="p-5">
         {!searched ? (
-          // 热门搜索
+          // 鐑棬鎼滅储
           <div>
-            <h2 className="text-sm font-bold text-gray-900 mb-3">🔥 热门搜索</h2>
+            <h2 className="text-sm font-bold text-gray-900 mb-3">馃敟 鐑棬鎼滅储</h2>
             <div className="flex flex-wrap gap-2">
               {hotTags.map(tag => (
                 <button
@@ -130,7 +125,7 @@ export default function Search() {
 
             {hotTopics.length > 0 && (
               <>
-                <h2 className="text-sm font-bold text-gray-900 mb-3 mt-6">📢 热门话题</h2>
+                <h2 className="text-sm font-bold text-gray-900 mb-3 mt-6">馃摙 鐑棬璇濋</h2>
                 <div className="space-y-2">
                   {hotTopics.map(topic => (
                     <div
@@ -145,7 +140,7 @@ export default function Search() {
                       </div>
                       <h3 className="text-sm font-bold text-gray-900">{topic.title}</h3>
                       <div className="text-[11px] text-gray-400 mt-1">
-                        💡 {topic.meme_count || 0} 梗 · 👥 {topic.participant_count || 0} 参与
+                        馃挕 {topic.meme_count || 0} 姊?路 馃懃 {topic.participant_count || 0} 鍙備笌
                       </div>
                     </div>
                   ))}
@@ -154,24 +149,24 @@ export default function Search() {
             )}
           </div>
         ) : loading ? (
-          <div className="text-center py-12 text-gray-400 text-sm">搜索中...</div>
+          <div className="text-center py-12 text-gray-400 text-sm">鎼滅储涓?..</div>
         ) : !hasResults ? (
           <div className="text-center py-12">
-            <div className="text-4xl mb-3">🔍</div>
-            <p className="text-gray-400 text-sm">没有找到「{query}」相关内容</p>
-            <p className="text-gray-300 text-xs mt-1">换个关键词试试</p>
+            <div className="text-4xl mb-3">馃攳</div>
+            <p className="text-gray-400 text-sm">娌℃湁鎵惧埌銆寋query}銆嶇浉鍏冲唴瀹?/p>
+            <p className="text-gray-300 text-xs mt-1">鎹釜鍏抽敭璇嶈瘯璇?/p>
           </div>
         ) : (
           <div className="space-y-4">
-            {/* 内容结果 */}
+            {/* 鍐呭缁撴灉 */}
             {(tab === 'all' || tab === 'content') && contentResults.length > 0 && (
               <div>
-                <h3 className="text-sm font-bold text-gray-900 mb-2">📦 内容 ({contentResults.length})</h3>
+                <h3 className="text-sm font-bold text-gray-900 mb-2">馃摝 鍐呭 ({contentResults.length})</h3>
                 <div className="space-y-2">
                   {contentResults.map(c => (
                     <div key={c.id} onClick={() => navigate(`/content/${c.id}`)} className="bg-white rounded-xl p-3 border border-gray-100 active:bg-gray-50">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-sm">{c.type === 'video' ? '🎬' : c.type === 'product' ? '📦' : '💡'}</span>
+                        <span className="text-sm">{c.type === 'video' ? '馃幀' : c.type === 'product' ? '馃摝' : '馃挕'}</span>
                         <h4 className="text-sm font-bold text-gray-900">{c.title}</h4>
                       </div>
                       {c.description && <p className="text-xs text-gray-500 line-clamp-1">{c.description}</p>}
@@ -181,10 +176,10 @@ export default function Search() {
               </div>
             )}
 
-            {/* 话题结果 */}
+            {/* 璇濋缁撴灉 */}
             {(tab === 'all' || tab === 'topic') && topicResults.length > 0 && (
               <div>
-                <h3 className="text-sm font-bold text-gray-900 mb-2">📢 话题 ({topicResults.length})</h3>
+                <h3 className="text-sm font-bold text-gray-900 mb-2">馃摙 璇濋 ({topicResults.length})</h3>
                 <div className="space-y-2">
                   {topicResults.map(t => (
                     <div key={t.id} onClick={() => navigate(`/topic/${t.id}`)} className="bg-white rounded-xl p-3 border border-gray-100 active:bg-gray-50">
@@ -193,7 +188,7 @@ export default function Search() {
                       </div>
                       <h4 className="text-sm font-bold text-gray-900">{t.title}</h4>
                       <div className="text-[11px] text-gray-400 mt-1">
-                        💡 {t.meme_count || 0} 梗 · 👥 {t.participant_count || 0} 参与
+                        馃挕 {t.meme_count || 0} 姊?路 馃懃 {t.participant_count || 0} 鍙備笌
                       </div>
                     </div>
                   ))}
@@ -201,17 +196,17 @@ export default function Search() {
               </div>
             )}
 
-            {/* 梗结果 */}
+            {/* 姊楃粨鏋?*/}
             {(tab === 'all' || tab === 'meme') && memeResults.length > 0 && (
               <div>
-                <h3 className="text-sm font-bold text-gray-900 mb-2">💡 梗 ({memeResults.length})</h3>
+                <h3 className="text-sm font-bold text-gray-900 mb-2">馃挕 姊?({memeResults.length})</h3>
                 <div className="space-y-2">
                   {memeResults.map(m => (
                     <div key={m.id} onClick={() => navigate(`/content/${m.id}`)} className="bg-white rounded-xl p-3 border border-gray-100 active:bg-gray-50">
                       <h4 className="text-sm font-bold text-gray-900">{m.title}</h4>
                       <p className="text-xs text-gray-500 line-clamp-1">{m.content}</p>
                       <div className="text-[11px] text-gray-400 mt-1">
-                        👁 {m.view_count || 0} · ❤️ {m.like_count || 0}
+                        馃憗 {m.view_count || 0} 路 鉂わ笍 {m.like_count || 0}
                       </div>
                     </div>
                   ))}
@@ -224,3 +219,4 @@ export default function Search() {
     </div>
   )
 }
+

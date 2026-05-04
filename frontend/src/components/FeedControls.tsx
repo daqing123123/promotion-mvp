@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { type Content } from '../lib/contentData'
 import { formatStat } from '../lib/memeSystem'
-import { supabase, toggleLikeWithPoints, toggleFavorite, promoteContent, earnPoints } from '../lib/supabase/client'
+import { checkInteraction, toggleLikeWithPoints, toggleFavorite, promoteContent, earnPoints } from '../lib/api/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
 import { toast } from '../lib/toast'
 import CommentSheet from './CommentSheet'
@@ -31,14 +31,12 @@ export default function FeedControls({ content, user, onMeme, onModalToggle }: {
   useEffect(() => {
     if (!user?.id) return
     const checkInteractions = async () => {
-      const [likeRes, favRes, promoteRes] = await Promise.all([
-        supabase.from('interactions').select('id').eq('user_id', user.id).eq('target_type', targetType).eq('target_id', content.id).eq('action', 'like').maybeSingle(),
-        supabase.from('interactions').select('id').eq('user_id', user.id).eq('target_type', targetType).eq('target_id', content.id).eq('action', 'favorite').maybeSingle(),
-        supabase.from('promotes').select('id').eq('user_id', user.id).eq('content_id', content.id).maybeSingle(),
+      const [hasLiked, hasFav] = await Promise.all([
+        checkInteraction(targetType, content.id, 'like'),
+        checkInteraction(targetType, content.id, 'favorite'),
       ])
-      if (likeRes.data) setLiked(true)
-      if (favRes.data) setFavorited(true)
-      if (promoteRes.data) setPromoted(true)
+      if (hasLiked) setLiked(true)
+      if (hasFav) setFavorited(true)
     }
     checkInteractions()
   }, [user?.id, content.id, targetType])
@@ -115,11 +113,8 @@ export default function FeedControls({ content, user, onMeme, onModalToggle }: {
         } catch {}
       }
       // 更新分享数
-      const table = isMeme ? 'memes' : 'contents'
-      const countField = 'share_count'
-      const { data: cur } = await supabase.from(table).select(countField).eq('id', content.id).single()
-      if (cur) {
-        await supabase.from(table).update({ [countField]: (cur[countField] || 0) + 1 }).eq('id', content.id)
+      if (user?.id) {
+        try { await earnPoints(user.id, 3, 'share', '分享内容'); toast.points(3) } catch {}
       }
     } catch {}
   }

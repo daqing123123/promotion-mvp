@@ -1,7 +1,7 @@
-// ===== 积分中心（真实数据版） =====
+﻿// ===== 绉垎涓績锛堢湡瀹炴暟鎹増锛?=====
 
 import { useState, useEffect, useCallback } from 'react'
-import { getPointsHistory, getPointsBalance } from '../lib/supabase/client'
+import { getPointsHistory, getPointsBalance } from '../lib/api/client'
 import { getLevelTitle, getLevelBadge, getLevelColor } from '../lib/rewardSystem'
 
 interface PointsProps {
@@ -24,7 +24,7 @@ export default function Points({ user }: PointsProps) {
       setPointsBalance(balance)
       setHistory(historyData)
     } catch (err) {
-      console.error('加载积分数据失败:', err)
+      console.error('鍔犺浇绉垎鏁版嵁澶辫触:', err)
     } finally {
       setLoading(false)
     }
@@ -37,27 +37,27 @@ export default function Points({ user }: PointsProps) {
   const currentLevel = user?.level || 1
 
   const earnRules = [
-    { id: '1', action: '每日签到', points: '+10', icon: '📅', desc: '每天签到获得积分' },
-    { id: '2', action: '发布内容', points: '+10', icon: '📝', desc: '每发布一条内容' },
-    { id: '3', action: '点赞', points: '+5', icon: '❤️', desc: '每次点赞获得积分' },
-    { id: '4', action: '帮推内容', points: '+20', icon: '🚀', desc: '每次帮推获得积分' },
-    { id: '5', action: '评论', points: '+5', icon: '💬', desc: '每次评论获得积分' },
-    { id: '6', action: '完成任务', points: '按任务', icon: '📋', desc: '完成任务获得积分' },
-    { id: '7', action: '参与活动', points: '+10', icon: '🎯', desc: '参与活动获得积分' },
-    { id: '8', action: '解锁成就', points: '按成就', icon: '🏆', desc: '解锁成就获得积分' },
-    { id: '9', action: '连续签到', points: '+20~200', icon: '🔥', desc: '连续签到额外奖励' },
+    { id: '1', action: '姣忔棩绛惧埌', points: '+10', icon: '馃搮', desc: '姣忓ぉ绛惧埌鑾峰緱绉垎' },
+    { id: '2', action: '鍙戝竷鍐呭', points: '+10', icon: '馃摑', desc: '姣忓彂甯冧竴鏉″唴瀹? },
+    { id: '3', action: '鐐硅禐', points: '+5', icon: '鉂わ笍', desc: '姣忔鐐硅禐鑾峰緱绉垎' },
+    { id: '4', action: '甯帹鍐呭', points: '+20', icon: '馃殌', desc: '姣忔甯帹鑾峰緱绉垎' },
+    { id: '5', action: '璇勮', points: '+5', icon: '馃挰', desc: '姣忔璇勮鑾峰緱绉垎' },
+    { id: '6', action: '瀹屾垚浠诲姟', points: '鎸変换鍔?, icon: '馃搵', desc: '瀹屾垚浠诲姟鑾峰緱绉垎' },
+    { id: '7', action: '鍙備笌娲诲姩', points: '+10', icon: '馃幆', desc: '鍙備笌娲诲姩鑾峰緱绉垎' },
+    { id: '8', action: '瑙ｉ攣鎴愬氨', points: '鎸夋垚灏?, icon: '馃弳', desc: '瑙ｉ攣鎴愬氨鑾峰緱绉垎' },
+    { id: '9', action: '杩炵画绛惧埌', points: '+20~200', icon: '馃敟', desc: '杩炵画绛惧埌棰濆濂栧姳' },
   ]
 
   const spendRules = [
-    { id: '1', action: '投票', points: '按投票', icon: '🗳️', desc: '参与投票消耗积分' },
-    { id: '2', action: '发起小浪', points: '100', icon: '🌊', desc: '基础推广' },
-    { id: '3', action: '发起中浪', points: '300', icon: '🌊', desc: '中等推广' },
-    { id: '4', action: '发起巨浪', points: '800', icon: '🌊', desc: '大规模推广' },
-    { id: '5', action: '曝光加速', points: '50', icon: '🚀', desc: '24h曝光翻倍' },
-    { id: '6', action: '置顶', points: '150', icon: '📌', desc: '置顶24小时' },
+    { id: '1', action: '鎶曠エ', points: '鎸夋姇绁?, icon: '馃棾锔?, desc: '鍙備笌鎶曠エ娑堣€楃Н鍒? },
+    { id: '2', action: '鍙戣捣灏忔氮', points: '100', icon: '馃寠', desc: '鍩虹鎺ㄥ箍' },
+    { id: '3', action: '鍙戣捣涓氮', points: '300', icon: '馃寠', desc: '涓瓑鎺ㄥ箍' },
+    { id: '4', action: '鍙戣捣宸ㄦ氮', points: '800', icon: '馃寠', desc: '澶ц妯℃帹骞? },
+    { id: '5', action: '鏇濆厜鍔犻€?, points: '50', icon: '馃殌', desc: '24h鏇濆厜缈诲€? },
+    { id: '6', action: '缃《', points: '150', icon: '馃搶', desc: '缃《24灏忔椂' },
   ]
 
-  // 计算本周统计
+  // 璁＄畻鏈懆缁熻
   const weekStart = new Date()
   weekStart.setDate(weekStart.getDate() - weekStart.getDay())
   weekStart.setHours(0, 0, 0, 0)
@@ -73,15 +73,15 @@ export default function Points({ user }: PointsProps) {
   return (
     <div className="max-w-lg mx-auto bg-black min-h-screen pb-16">
       <header className="sticky top-0 bg-black border-b border-white/10 z-40 px-4 py-3">
-        <h1 className="text-xl font-bold text-white">积分中心</h1>
+        <h1 className="text-xl font-bold text-white">绉垎涓績</h1>
       </header>
 
-      {/* 积分概览 */}
+      {/* 绉垎姒傝 */}
       <div className="px-4 py-6">
         <div className="bg-gradient-to-r from-primary to-secondary rounded-2xl p-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <div className="text-white/80 text-sm">我的积分</div>
+              <div className="text-white/80 text-sm">鎴戠殑绉垎</div>
               <div className="text-5xl font-bold text-white">{loading ? '...' : pointsBalance}</div>
             </div>
             <div className="text-right">
@@ -97,14 +97,14 @@ export default function Points({ user }: PointsProps) {
         </div>
       </div>
 
-      {/* 标签页 */}
+      {/* 鏍囩椤?*/}
       <div className="bg-black px-4 py-2 border-b border-white/10">
         <div className="flex gap-2">
           {[
-            { key: 'earn' as const, label: '💰 赚积分' },
-            { key: 'spend' as const, label: '💸 花积分' },
-            { key: 'level' as const, label: '📊 等级' },
-            { key: 'history' as const, label: '📝 记录' },
+            { key: 'earn' as const, label: '馃挵 璧氱Н鍒? },
+            { key: 'spend' as const, label: '馃捀 鑺辩Н鍒? },
+            { key: 'level' as const, label: '馃搳 绛夌骇' },
+            { key: 'history' as const, label: '馃摑 璁板綍' },
           ].map(tab => (
             <button
               key={tab.key}
@@ -120,12 +120,12 @@ export default function Points({ user }: PointsProps) {
       </div>
 
       <div className="p-4 space-y-3">
-        {/* 赚积分 */}
+        {/* 璧氱Н鍒?*/}
         {activeTab === 'earn' && (
           <>
             <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4 mb-4">
-              <h3 className="text-green-400 font-bold mb-2">💰 如何赚取积分</h3>
-              <p className="text-white/60 text-sm">通过签到、发布内容、帮推、评论等方式赚取积分</p>
+              <h3 className="text-green-400 font-bold mb-2">馃挵 濡備綍璧氬彇绉垎</h3>
+              <p className="text-white/60 text-sm">閫氳繃绛惧埌銆佸彂甯冨唴瀹广€佸府鎺ㄣ€佽瘎璁虹瓑鏂瑰紡璧氬彇绉垎</p>
             </div>
             {earnRules.map(rule => (
               <div key={rule.id} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl">
@@ -140,12 +140,12 @@ export default function Points({ user }: PointsProps) {
           </>
         )}
 
-        {/* 花积分 */}
+        {/* 鑺辩Н鍒?*/}
         {activeTab === 'spend' && (
           <>
             <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 mb-4">
-              <h3 className="text-red-400 font-bold mb-2">💸 积分用途</h3>
-              <p className="text-white/60 text-sm">积分可用于推广、投票、置顶等</p>
+              <h3 className="text-red-400 font-bold mb-2">馃捀 绉垎鐢ㄩ€?/h3>
+              <p className="text-white/60 text-sm">绉垎鍙敤浜庢帹骞裤€佹姇绁ㄣ€佺疆椤剁瓑</p>
             </div>
             {spendRules.map(rule => (
               <div key={rule.id} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl opacity-60">
@@ -156,19 +156,19 @@ export default function Points({ user }: PointsProps) {
                 </div>
                 <div className="text-right">
                   <span className="text-red-400 font-bold">{rule.points}</span>
-                  <div className="text-[10px] text-white/30 mt-0.5">即将上线</div>
+                  <div className="text-[10px] text-white/30 mt-0.5">鍗冲皢涓婄嚎</div>
                 </div>
               </div>
             ))}
           </>
         )}
 
-        {/* 等级 */}
+        {/* 绛夌骇 */}
         {activeTab === 'level' && (
           <>
             <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 mb-4">
-              <h3 className="text-blue-400 font-bold mb-2">📊 等级系统</h3>
-              <p className="text-white/60 text-sm">积分越多等级越高，解锁更多特权</p>
+              <h3 className="text-blue-400 font-bold mb-2">馃搳 绛夌骇绯荤粺</h3>
+              <p className="text-white/60 text-sm">绉垎瓒婂绛夌骇瓒婇珮锛岃В閿佹洿澶氱壒鏉?/p>
             </div>
 
             <div className="bg-white/5 rounded-xl p-4 mb-4">
@@ -181,17 +181,17 @@ export default function Points({ user }: PointsProps) {
 
             <div className="space-y-2">
               {[
-                { level: 1, title: '泡沫', icon: '🫧' },
-                { level: 5, title: '水滴', icon: '💧' },
-                { level: 10, title: '小浪花', icon: '💎' },
-                { level: 20, title: '中流击水', icon: '⭐' },
-                { level: 30, title: '乘风破浪', icon: '🚀' },
-                { level: 40, title: '浪尖舞者', icon: '✨' },
-                { level: 50, title: '巨浪行者', icon: '💪' },
-                { level: 60, title: '潮汐大师', icon: '🔥' },
-                { level: 70, title: '风暴领主', icon: '⚡' },
-                { level: 80, title: '海洋之王', icon: '👑' },
-                { level: 90, title: '传奇巨浪', icon: '🌊' },
+                { level: 1, title: '娉℃搏', icon: '馃' },
+                { level: 5, title: '姘存淮', icon: '馃挧' },
+                { level: 10, title: '灏忔氮鑺?, icon: '馃拵' },
+                { level: 20, title: '涓祦鍑绘按', icon: '猸? },
+                { level: 30, title: '涔橀鐮存氮', icon: '馃殌' },
+                { level: 40, title: '娴皷鑸炶€?, icon: '鉁? },
+                { level: 50, title: '宸ㄦ氮琛岃€?, icon: '馃挭' },
+                { level: 60, title: '娼睈澶у笀', icon: '馃敟' },
+                { level: 70, title: '椋庢毚棰嗕富', icon: '鈿? },
+                { level: 80, title: '娴锋磱涔嬬帇', icon: '馃憫' },
+                { level: 90, title: '浼犲宸ㄦ氮', icon: '馃寠' },
               ].map(item => (
                 <div
                   key={item.level}
@@ -210,7 +210,7 @@ export default function Points({ user }: PointsProps) {
                     <div className="text-sm text-white">Lv.{item.level} {item.title}</div>
                   </div>
                   {currentLevel >= item.level && (
-                    <div className="text-xs text-primary">✓ 已达成</div>
+                    <div className="text-xs text-primary">鉁?宸茶揪鎴?/div>
                   )}
                 </div>
               ))}
@@ -218,36 +218,36 @@ export default function Points({ user }: PointsProps) {
           </>
         )}
 
-        {/* 历史记录 */}
+        {/* 鍘嗗彶璁板綍 */}
         {activeTab === 'history' && (
           <>
             <div className="bg-white/5 rounded-xl p-4 mb-4">
               <div className="grid grid-cols-3 gap-4 text-center">
                 <div>
                   <div className="text-2xl font-bold text-green-400">+{weekEarned}</div>
-                  <div className="text-xs text-white/40">本周获得</div>
+                  <div className="text-xs text-white/40">鏈懆鑾峰緱</div>
                 </div>
                 <div>
                   <div className="text-2xl font-bold text-red-400">-{weekSpent}</div>
-                  <div className="text-xs text-white/40">本周消耗</div>
+                  <div className="text-xs text-white/40">鏈懆娑堣€?/div>
                 </div>
                 <div>
                   <div className="text-2xl font-bold text-primary">{pointsBalance}</div>
-                  <div className="text-xs text-white/40">当前积分</div>
+                  <div className="text-xs text-white/40">褰撳墠绉垎</div>
                 </div>
               </div>
             </div>
 
             {loading ? (
-              <div className="text-center py-10 text-white/40">加载中...</div>
+              <div className="text-center py-10 text-white/40">鍔犺浇涓?..</div>
             ) : history.length === 0 ? (
               <div className="text-center py-10">
-                <div className="text-white/60">暂无积分记录</div>
+                <div className="text-white/60">鏆傛棤绉垎璁板綍</div>
               </div>
             ) : (
               history.map(record => (
                 <div key={record.id} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl">
-                  <span className="text-2xl">{record.amount > 0 ? '💰' : '💸'}</span>
+                  <span className="text-2xl">{record.amount > 0 ? '馃挵' : '馃捀'}</span>
                   <div className="flex-1">
                     <div className="font-medium text-white text-sm">{record.description}</div>
                     <div className="text-xs text-white/40">
@@ -266,3 +266,4 @@ export default function Points({ user }: PointsProps) {
     </div>
   )
 }
+

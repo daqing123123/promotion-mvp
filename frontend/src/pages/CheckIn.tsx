@@ -1,7 +1,7 @@
-// ===== 签到页面 =====
+﻿// ===== 绛惧埌椤甸潰 =====
 
 import { useState, useEffect, useCallback } from 'react'
-import { checkIn as checkInDB, getTodaySignIn, getConsecutiveDays, getSignInHistory } from '../lib/supabase/client'
+import { checkIn as checkInDB, getTodaySignIn, getConsecutiveDays, getSignInHistory } from '../lib/api/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
 import { toast } from '../lib/toast'
 
@@ -33,7 +33,7 @@ export default function CheckIn({ user, setUser }: CheckInProps) {
       setSignInHistory(history)
       setTotalDays(history.length)
     } catch (err) {
-      console.error('加载签到数据失败:', err)
+      console.error('鍔犺浇绛惧埌鏁版嵁澶辫触:', err)
     }
   }, [user])
 
@@ -64,7 +64,7 @@ export default function CheckIn({ user, setUser }: CheckInProps) {
       await loadSignInData()
       setTimeout(() => setShowReward(false), 3000)
     } catch (err: any) {
-      toast.error(err.message || '签到失败')
+      toast.error(err.message || '绛惧埌澶辫触')
     } finally {
       setLoading(false)
     }
@@ -84,25 +84,25 @@ export default function CheckIn({ user, setUser }: CheckInProps) {
     })
   )
 
-  const monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
+  const monthNames = ['1鏈?, '2鏈?, '3鏈?, '4鏈?, '5鏈?, '6鏈?, '7鏈?, '8鏈?, '9鏈?, '10鏈?, '11鏈?, '12鏈?]
 
   return (
     <div className="max-w-lg mx-auto bg-black min-h-screen pb-16">
       <header className="sticky top-0 bg-black border-b border-white/10 z-40 px-4 py-3">
-        <h1 className="text-xl font-bold text-white">📅 签到日历</h1>
+        <h1 className="text-xl font-bold text-white">馃搮 绛惧埌鏃ュ巻</h1>
       </header>
 
       <div className="p-4">
-        {/* 签到卡片 */}
+        {/* 绛惧埌鍗＄墖 */}
         <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-2xl p-6 mb-4">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <div className="text-white/80 text-sm">连续签到</div>
-              <div className="text-5xl font-bold text-white">{consecutiveDays} 天</div>
+              <div className="text-white/80 text-sm">杩炵画绛惧埌</div>
+              <div className="text-5xl font-bold text-white">{consecutiveDays} 澶?/div>
             </div>
             <div className="text-right">
-              <div className="text-white/80 text-sm">累计签到</div>
-              <div className="text-5xl font-bold text-white">{totalDays} 天</div>
+              <div className="text-white/80 text-sm">绱绛惧埌</div>
+              <div className="text-5xl font-bold text-white">{totalDays} 澶?/div>
             </div>
           </div>
           <button
@@ -116,18 +116,18 @@ export default function CheckIn({ user, setUser }: CheckInProps) {
                   : 'bg-white text-black active:scale-[0.98]'
             }`}
           >
-            {loading ? '签到中...' : isCheckedToday ? '✅ 今日已签到' : '签到 +10积分'}
+            {loading ? '绛惧埌涓?..' : isCheckedToday ? '鉁?浠婃棩宸茬鍒? : '绛惧埌 +10绉垎'}
           </button>
         </div>
 
-        {/* 连续签到奖励提示 */}
+        {/* 杩炵画绛惧埌濂栧姳鎻愮ず */}
         <div className="bg-white/5 rounded-xl p-4 mb-4">
-          <h3 className="text-white font-bold mb-3">💰 连续签到奖励</h3>
+          <h3 className="text-white font-bold mb-3">馃挵 杩炵画绛惧埌濂栧姳</h3>
           <div className="space-y-2">
             {[
-              { days: 3, reward: '+20积分', icon: '🥉', active: consecutiveDays >= 3 },
-              { days: 7, reward: '+50积分', icon: '🥈', active: consecutiveDays >= 7 },
-              { days: 30, reward: '+200积分', icon: '🥇', active: consecutiveDays >= 30 },
+              { days: 3, reward: '+20绉垎', icon: '馃', active: consecutiveDays >= 3 },
+              { days: 7, reward: '+50绉垎', icon: '馃', active: consecutiveDays >= 7 },
+              { days: 30, reward: '+200绉垎', icon: '馃', active: consecutiveDays >= 30 },
             ].map(item => (
               <div
                 key={item.days}
@@ -137,10 +137,10 @@ export default function CheckIn({ user, setUser }: CheckInProps) {
               >
                 <span className="text-2xl">{item.icon}</span>
                 <div className="flex-1">
-                  <div className="text-sm text-white">连续签到 {item.days} 天</div>
+                  <div className="text-sm text-white">杩炵画绛惧埌 {item.days} 澶?/div>
                   <div className="text-xs text-white/40">{item.reward}</div>
                 </div>
-                {item.active && <span className="text-xs text-purple-400">✅ 已达成</span>}
+                {item.active && <span className="text-xs text-purple-400">鉁?宸茶揪鎴?/span>}
                 {!item.active && (
                   <div className="text-xs text-white/40">{consecutiveDays}/{item.days}</div>
                 )}
@@ -149,17 +149,17 @@ export default function CheckIn({ user, setUser }: CheckInProps) {
           </div>
         </div>
 
-        {/* 日历 */}
+        {/* 鏃ュ巻 */}
         <div className="bg-white/5 rounded-xl p-4 mb-4">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-white font-bold">{year}年{monthNames[month]}</h3>
+            <h3 className="text-white font-bold">{year}骞磠monthNames[month]}</h3>
             <div className="flex items-center gap-2 text-sm text-white/40">
-              <span>已签到 {totalDays} 天</span>
+              <span>宸茬鍒?{totalDays} 澶?/span>
             </div>
           </div>
 
           <div className="grid grid-cols-7 gap-1 mb-2">
-            {['日', '一', '二', '三', '四', '五', '六'].map(day => (
+            {['鏃?, '涓€', '浜?, '涓?, '鍥?, '浜?, '鍏?].map(day => (
               <div key={day} className="text-center text-xs text-white/40 py-2">{day}</div>
             ))}
           </div>
@@ -182,22 +182,22 @@ export default function CheckIn({ user, setUser }: CheckInProps) {
                     'bg-white/5 text-white/40'
                   }`}
                 >
-                  {isChecked ? '✓' : day}
+                  {isChecked ? '鉁? : day}
                 </div>
               )
             })}
           </div>
         </div>
 
-        {/* 签到历史 */}
+        {/* 绛惧埌鍘嗗彶 */}
         {signInHistory.length > 0 && (
           <div className="bg-white/5 rounded-xl p-4">
-            <h3 className="text-white font-bold mb-3">📋 签到记录</h3>
+            <h3 className="text-white font-bold mb-3">馃搵 绛惧埌璁板綍</h3>
             <div className="space-y-2 max-h-48 overflow-y-auto">
               {signInHistory.slice(0, 10).map((record: any) => (
                 <div key={record.id} className="flex items-center justify-between text-sm">
                   <span className="text-white/60">{record.sign_date}</span>
-                  <span className="text-purple-400">+{record.points_earned}积分</span>
+                  <span className="text-purple-400">+{record.points_earned}绉垎</span>
                 </div>
               ))}
             </div>
@@ -205,33 +205,33 @@ export default function CheckIn({ user, setUser }: CheckInProps) {
         )}
       </div>
 
-      {/* 签到成功弹窗 */}
+      {/* 绛惧埌鎴愬姛寮圭獥 */}
       {showReward && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center">
           <div className="bg-white rounded-2xl p-8 text-center mx-4 max-w-sm">
-            <div className="text-6xl mb-4">🎉</div>
-            <h3 className="text-2xl font-bold text-gray-900 mb-2">签到成功！</h3>
-            <p className="text-gray-600 mb-1">获得 +{rewardInfo.points - rewardInfo.bonus} 积分</p>
+            <div className="text-6xl mb-4">馃帀</div>
+            <h3 className="text-2xl font-bold text-gray-900 mb-2">绛惧埌鎴愬姛锛?/h3>
+            <p className="text-gray-600 mb-1">鑾峰緱 +{rewardInfo.points - rewardInfo.bonus} 绉垎</p>
             {rewardInfo.bonus > 0 && (
-              <p className="text-purple-600 font-bold">连续签到额外 +{rewardInfo.bonus} 积分</p>
+              <p className="text-purple-600 font-bold">杩炵画绛惧埌棰濆 +{rewardInfo.bonus} 绉垎</p>
             )}
-            <p className="text-sm text-gray-400 mt-2">连续签到 {consecutiveDays} 天</p>
+            <p className="text-sm text-gray-400 mt-2">杩炵画绛惧埌 {consecutiveDays} 澶?/p>
           </div>
         </div>
       )}
 
-      {/* 新成就弹窗 */}
+      {/* 鏂版垚灏卞脊绐?*/}
       {newAchievements.length > 0 && (
         <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center" onClick={() => setNewAchievements([])}>
           <div className="bg-white rounded-2xl p-8 text-center mx-4 max-w-sm">
-            <div className="text-6xl mb-4">🏆</div>
-            <h3 className="text-2xl font-bold text-gray-900 mb-2">成就解锁！</h3>
-            <p className="text-gray-600">解锁了 {newAchievements.length} 个新成就</p>
+            <div className="text-6xl mb-4">馃弳</div>
+            <h3 className="text-2xl font-bold text-gray-900 mb-2">鎴愬氨瑙ｉ攣锛?/h3>
+            <p className="text-gray-600">瑙ｉ攣浜?{newAchievements.length} 涓柊鎴愬氨</p>
             <button
               onClick={() => setNewAchievements([])}
               className="mt-4 px-6 py-2 bg-black text-white rounded-full text-sm"
             >
-              太棒了！
+              澶浜嗭紒
             </button>
           </div>
         </div>
@@ -239,3 +239,4 @@ export default function CheckIn({ user, setUser }: CheckInProps) {
     </div>
   )
 }
+

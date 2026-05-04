@@ -1,7 +1,7 @@
 // ===== 评论底部弹窗 =====
 
 import { useState, useEffect, useRef } from 'react'
-import { supabase, addCommentWithPoints } from '../lib/supabase/client'
+import { addCommentWithPoints, getComments, getUserById } from '../lib/api/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
 import { toast } from '../lib/toast'
 
@@ -57,19 +57,13 @@ export default function CommentSheet({ contentId, source, userId, onClose, onCom
     else if (source === 'topic') targetType = 'topic'
     else targetType = 'content'
 
-    const { data: cmts } = await supabase
-      .from('comments')
-      .select('*')
-      .eq('target_type', targetType)
-      .eq('target_id', contentId)
-      .order('created_at', { ascending: false })
-      .limit(50)
+    const cmts = await getComments(targetType, contentId)
 
-    const userIds = [...new Set((cmts || []).map(c => c.user_id).filter(Boolean))]
+    const userIds = [...new Set((cmts || []).map((c: any) => c.user_id).filter(Boolean))]
     let usersMap: Record<string, any> = {}
     if (userIds.length > 0) {
-      const { data: usersData } = await supabase.from('users').select('id, name, avatar').in('id', userIds)
-      if (usersData) usersMap = Object.fromEntries(usersData.map(u => [u.id, u]))
+      const usersData = await Promise.all(userIds.map((id: string) => getUserById(id).catch(() => null)))
+      if (usersData) usersMap = Object.fromEntries(usersData.filter(Boolean).map((u: any) => [u.id, u]))
     }
 
     setComments((cmts || []).map(c => ({
@@ -86,16 +80,12 @@ export default function CommentSheet({ contentId, source, userId, onClose, onCom
 
     let uid = userId
     if (!uid) {
-      const { data: { user: authUser } } = await supabase.auth.getUser()
-      uid = authUser?.id
-    }
-    if (!uid) {
       toast.warning('请先登录')
       setSubmitting(false)
       return
     }
 
-    const { data: userInfo } = await supabase.from('users').select('name, avatar').eq('id', uid).single()
+    const userInfo = await getUserById(uid).catch(() => null)
 
     try {
       let targetType: string

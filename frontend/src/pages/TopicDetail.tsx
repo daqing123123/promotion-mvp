@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { supabase, earnPoints, toggleLikeWithPoints, addCommentWithPoints } from '../lib/supabase/client'
+import { getTopicById, getMemesByTopic, getComments, getUserById, checkInteraction, toggleLikeWithPoints, addCommentWithPoints, earnPoints, acceptTopicPromote, updateTopicPromote, claimTopicCoupon, updateTopic, getTopicPromotes, createMeme } from '../lib/api/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
 import { toast } from '../lib/toast'
 import MemeModal from '../components/MemeModal'
@@ -33,50 +33,55 @@ export default function TopicDetail({ user }: { user?: any }) {
 
   const fetchTopic = async (topicId: string) => {
     setLoading(true)
-    const { data: t } = await supabase.from('topics').select('*').eq('id', topicId).single()
-    setTopic(t)
-    if (t) {
-      // 并行加载
-      const [memesRes, commentsRes, likeRes] = await Promise.all([
-        supabase.from('memes').select('*').eq('topic_id', topicId).order('hot_score', { ascending: false }),
-        supabase.from('comments').select('*').eq('target_type', 'topic').eq('target_id', topicId).order('created_at', { ascending: false }).limit(50),
-        supabase.from('interactions').select('id').eq('target_type', 'topic').eq('target_id', topicId).eq('action', 'like'),
-      ])
-
-      setMemes(memesRes.data || [])
-      setLikeCount(likeRes.data?.length || 0)
-
-      // 评论 + 用户信息
-      const cmts = commentsRes.data || []
-      const userIds = [...new Set(cmts.map(c => c.user_id).filter(Boolean))]
-      let usersMap: Record<string, any> = {}
-      if (userIds.length > 0) {
-        const { data: usersData } = await supabase.from('users').select('id, name, avatar').in('id', userIds)
-        if (usersData) usersMap = Object.fromEntries(usersData.map(u => [u.id, u]))
-      }
-      setComments(cmts.map(c => ({
-        ...c,
-        user_name: usersMap[c.user_id]?.name || '匿名用户',
-        user_avatar: usersMap[c.user_id]?.avatar || '👤',
-      })))
-
-      // 当前用户状态
-      if (user?.id) {
-        const [existing, likedRes, promoteData] = await Promise.all([
-          supabase.from('topic_promotes').select('*').eq('topic_id', topicId).eq('user_id', user.id).maybeSingle(),
-          supabase.from('interactions').select('id').eq('user_id', user.id).eq('target_type', 'topic').eq('target_id', topicId).eq('action', 'like').maybeSingle(),
-          supabase.from('topic_promotes').select('*', { count: 'exact', head: true }).eq('topic_id', topicId),
+    try {
+      const t = await getTopicById(topicId)
+      setTopic(t)
+      if (t) {
+        // 并行加载 memes + comments
+        const [memesData, commentsData] = await Promise.all([
+          getMemesByTopic(topicId),
+          getComments('topic', topicId),
         ])
-        if (existing.data) {
-          setPromoted(true)
-          setMyPromote(existing.data)
+
+        setMemes((memesData || []).slice(0, 50))
+        setLikeCount(t.like_count || 0)
+
+        // 评论 + 用户信息
+        const cmts = (commentsData || []).slice(0, 50)
+        const userIds = [...new Set(cmts.map((c: any) => c.user_id).filter(Boolean))]
+        let usersMap: Record<string, any> = {}
+        if (userIds.length > 0) {
+          const usersData = await Promise.all(userIds.map((uid: string) => getUserById(uid).catch(() => null)))
+          usersMap = Object.fromEntries(usersData.filter(Boolean).map((u: any) => [u.id, u]))
         }
-        if (likedRes.data) setLiked(true)
-        setPromoteProgress({ accepted: promoteData.count || 0, target: t.promote_target || 100 })
-      } else {
-        const { count } = await supabase.from('topic_promotes').select('*', { count: 'exact', head: true }).eq('topic_id', topicId)
-        setPromoteProgress({ accepted: count || 0, target: t.promote_target || 100 })
+        setComments(cmts.map((c: any) => ({
+          ...c,
+          user_name: usersMap[c.user_id]?.name || '匿名用户',
+          user_avatar: usersMap[c.user_id]?.avatar || '👤',
+        })))
+
+        // 推广进度
+        const promotes = await getTopicPromotes(topicId).catch(() => [] as any[])
+        const promoteArr = promotes || []
+        setPromoteProgress({
+          accepted: promoteArr.length,
+          target: t.promote_target || 100,
+        })
+
+        // 当前用户状态
+        if (user?.id) {
+          const likedData = await checkInteraction('topic', topicId, 'like').catch(() => null)
+          if (likedData?.exists) setLiked(true)
+
+          const myP = promoteArr.find((p: any) => p.user_id === user.id || p.userId === user.id)
+          if (myP) {
+            setPromoted(true)
+            setMyPromote(myP)
+          }
+        }
       }
+    } catch (e: any) {
+      console.error('加载话题失败', e)
     }
     setLoading(false)
   }
@@ -108,11 +113,10 @@ export default function TopicDetail({ user }: { user?: any }) {
     setSubmitting(true)
     try {
       const inserted = await addCommentWithPoints('topic', topic.id, newComment.trim())
-      const { data: userInfo } = await supabase.from('users').select('name, avatar').eq('id', user.id).single()
       setComments([{
         ...inserted,
-        user_name: userInfo?.name || '匿名用户',
-        user_avatar: userInfo?.avatar || '👤',
+        user_name: user.name || '匿名用户',
+        user_avatar: user.avatar || '👤',
       }, ...comments])
       setNewComment('')
       checkAndUnlockAchievements(user.id).catch(() => {})
@@ -150,29 +154,25 @@ export default function TopicDetail({ user }: { user?: any }) {
         insertData.status = 'address_submitted'
       }
 
-      const { error, data } = await supabase.from('topic_promotes').insert(insertData).select().single()
-      if (error) throw error
+      const data = await acceptTopicPromote(topic.id, insertData)
 
-      // 给积分
+      // 给积分（后端 acceptTopicPromote 可能已处理，这里兜底）
       try {
         await earnPoints(user.id, topic.promote_reward || 20, 'promote', `接受推广任务「${topic.title}」`)
       } catch (e: any) {
         if (!e.message?.includes('今日该类积分已达上限')) throw e
       }
 
-      await supabase.from('topics').update({ promote_count: (topic.promote_count || 0) + 1 }).eq('id', topic.id)
+      await updateTopic(topic.id, {
+        promote_count: (topic.promote_count || 0) + 1,
+        participant_count: (topic.participant_count || 0) + 1,
+      })
 
       // 如果是优惠券奖励，自动发券
       if (isCoupon && topic.coupon_type) {
         try {
-          await supabase.from('user_coupons').insert({
-            user_id: user.id,
-            topic_id: topic.id,
-            coupon_type: topic.coupon_type,
-            coupon_value: topic.coupon_value || '',
-            expire_at: new Date(Date.now() + (topic.coupon_expire_days || 30) * 86400000).toISOString(),
-          })
-          await supabase.from('topics').update({ coupon_claimed: (topic.coupon_claimed || 0) + 1 }).eq('id', topic.id)
+          await claimTopicCoupon(topic.id)
+          await updateTopic(topic.id, { coupon_claimed: (topic.coupon_claimed || 0) + 1 })
         } catch {}
       }
 
@@ -204,13 +204,13 @@ export default function TopicDetail({ user }: { user?: any }) {
     try {
       if (myPromote?.id) {
         // 已接受推广，更新地址
-        await supabase.from('topic_promotes').update({
+        const updated = await updateTopicPromote(myPromote.id, {
           receiver_name: address.name,
           receiver_phone: address.phone,
           receiver_address: address.address,
           status: 'address_submitted',
-        }).eq('id', myPromote.id)
-        setMyPromote({ ...myPromote, ...address, status: 'address_submitted' })
+        })
+        setMyPromote({ ...myPromote, ...updated })
         toast.success('地址已提交！')
       } else {
         // 直接接受推广 + 提交地址
@@ -287,7 +287,7 @@ export default function TopicDetail({ user }: { user?: any }) {
 
         {/* 统计 */}
         <div className="grid grid-cols-4 gap-3 mb-4">
-          <div className="bg-gray-50 rounded-xl p-3 text-center"><div className="text-lg font-bold text-gray-900">{topic.meme_count}</div><div className="text-[10px] text-gray-400">梗</div></div>
+          <div className="bg-gray-50 rounded-xl p-3 text-center"><div className="text-lg font-bold text-gray-900">{topic.meme_count || memes.length}</div><div className="text-[10px] text-gray-400">梗</div></div>
           <div className="bg-gray-50 rounded-xl p-3 text-center"><div className="text-lg font-bold text-gray-900">{formatNum(topic.total_views)}</div><div className="text-[10px] text-gray-400">曝光</div></div>
           <div className="bg-gray-50 rounded-xl p-3 text-center"><div className="text-lg font-bold text-gray-900">{topic.participant_count}</div><div className="text-[10px] text-gray-400">参与</div></div>
           <div className="bg-gray-50 rounded-xl p-3 text-center"><div className="text-lg font-bold text-orange-500">{topic.hot_score}</div><div className="text-[10px] text-gray-400">热度</div></div>
@@ -572,9 +572,9 @@ export default function TopicDetail({ user }: { user?: any }) {
         <MemeModal
           targetTitle={topic.title}
           onClose={() => setShowMemeCreate(false)}
-          onSuccess={async (meme) => {
+          onSuccess={async (meme: any) => {
             if (!user?.id) { navigate('/login'); return }
-            await supabase.from('memes').insert({
+            await createMeme({
               type: meme.type, title: meme.title, content: meme.content,
               hashtags: meme.hashtags, topic_id: topic.id, creator_id: user.id,
             })
