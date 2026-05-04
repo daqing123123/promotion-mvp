@@ -203,6 +203,42 @@ app.put('/api/users/:id', authMiddleware, async (req, res) => {
 })
 
 // ============================================
+// 用户统计 API（成就系统用）
+// ============================================
+
+app.get('/api/users/:id/stats', async (req, res) => {
+  try {
+    const userId = req.params.id
+
+    const [totalPromotesRes] = await pool.query('SELECT COUNT(*) as count FROM promotes WHERE user_id = ?', [userId])
+    const totalPromotes = totalPromotesRes[0]?.count || 0
+    const [contentsPublished] = await pool.query('SELECT COUNT(*) as count FROM contents WHERE creator_id = ?', [userId])
+    const [totalLikes] = await pool.query('SELECT COALESCE(SUM(like_count), 0) as count FROM contents WHERE creator_id = ?', [userId])
+    const [totalComments] = await pool.query('SELECT COUNT(*) as count FROM comments WHERE user_id = ?', [userId])
+    const [checkInRes] = await pool.query('SELECT MAX(consecutive_days) as max_consecutive, COUNT(*) as total FROM sign_ins WHERE user_id = ?', [userId])
+    const [followers] = await pool.query('SELECT COUNT(*) as count FROM follows WHERE following_id = ?', [userId])
+    const [userRes] = await pool.query('SELECT points FROM users WHERE id = ?', [userId])
+    const [tasksCompleted] = await pool.query('SELECT COUNT(*) as count FROM task_participants WHERE user_id = ? AND status = ?', [userId, 'completed'])
+    const [votesParticipated] = await pool.query('SELECT COUNT(*) as count FROM vote_records WHERE user_id = ?', [userId])
+
+    res.json({
+      totalPromotes,
+      contentPublished: contentsPublished[0].count || 0,
+      totalLikes: totalLikes[0].count || 0,
+      totalComments: totalComments[0].count || 0,
+      consecutiveCheckInDays: checkInRes[0]?.max_consecutive || 0,
+      totalCheckInDays: checkInRes[0]?.total || 0,
+      followers: followers[0].count || 0,
+      totalPoints: userRes[0]?.points || 0,
+      tasksCompleted: tasksCompleted[0].count || 0,
+      votesParticipated: votesParticipated[0].count || 0,
+    })
+  } catch (err) {
+    res.status(500).json({ error: '获取用户统计失败' })
+  }
+})
+
+// ============================================
 // 内容 API
 // ============================================
 
@@ -255,6 +291,9 @@ app.post('/api/contents', authMiddleware, async (req, res) => {
       'INSERT INTO contents (id, type, title, description, cover_url, url, tags, render_mode, render_src, render_config, creator_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [id, type || 'article', title, description || '', cover_url || '', url || '', JSON.stringify(tags || []), render_mode || 'card', render_src || '', render_config ? JSON.stringify(render_config) : null, req.userId]
     )
+    // 发布内容给积分
+    try { await earnPoints(req.userId, 5, 'publish', '发布内容获得积分') } catch {}
+
     const [rows] = await pool.query('SELECT * FROM contents WHERE id = ?', [id])
     res.json(rows[0])
   } catch (err) {
@@ -266,8 +305,18 @@ app.post('/api/contents', authMiddleware, async (req, res) => {
 // 话题 API
 // ============================================
 
+// 自动过期：将 end_date 已过的话题标记为 completed
+async function autoExpireTopics() {
+  try {
+    await pool.query(
+      "UPDATE topics SET status = 'completed' WHERE status = 'active' AND end_date IS NOT NULL AND end_date != '' AND end_date < NOW()"
+    )
+  } catch {}
+}
+
 app.get('/api/topics', async (req, res) => {
   try {
+    await autoExpireTopics()
     const type = req.query.type
     let sql = 'SELECT * FROM topics WHERE status = ?'
     const params = ['active']
@@ -285,6 +334,7 @@ app.get('/api/topics', async (req, res) => {
 
 app.get('/api/topics/:id', async (req, res) => {
   try {
+    await autoExpireTopics()
     const [rows] = await pool.query('SELECT * FROM topics WHERE id = ?', [req.params.id])
     if (rows.length === 0) return res.status(404).json({ error: '话题不存在' })
     res.json(rows[0])
@@ -1010,6 +1060,37 @@ app.get('/api/invite/leaderboard', async (req, res) => {
   }
 })
 
+// 填写邀请码（已注册用户补填）
+app.post('/api/invite/claim', authMiddleware, async (req, res) => {
+  try {
+    const { code } = req.body
+    if (!code) return res.status(400).json({ error: '请输入邀请码' })
+
+    const [codeRows] = await pool.query('SELECT user_id FROM referral_codes WHERE code = ?', [code.toUpperCase()])
+    if (codeRows.length === 0) return res.status(400).json({ error: '邀请码不存在' })
+
+    const referrerId = codeRows[0].user_id
+    if (referrerId === req.userId) return res.status(400).json({ error: '不能使用自己的邀请码' })
+
+    const [existing] = await pool.query('SELECT id FROM referrals WHERE referred_id = ?', [req.userId])
+    if (existing.length > 0) return res.status(400).json({ error: '已经填写过邀请码了' })
+
+    await pool.query(
+      'INSERT INTO referrals (id, referrer_id, referred_id, referral_code, status, referrer_reward, referred_reward) VALUES (?, ?, ?, ?, ?, 100, 50)',
+      [genId(), referrerId, req.userId, code.toUpperCase(), 'registered']
+    )
+
+    try { await earnPoints(referrerId, 100, 'invite', '邀请新用户注册奖励') } catch {}
+    try { await earnPoints(req.userId, 50, 'invite', '填写邀请码获得积分') } catch {}
+
+    await pool.query('UPDATE referral_codes SET uses_count = uses_count + 1 WHERE user_id = ?', [referrerId])
+
+    res.json({ success: true, bonus: 50 })
+  } catch (err) {
+    res.status(500).json({ error: err.message || '填写邀请码失败' })
+  }
+})
+
 // ============================================
 // 活动 API
 // ============================================
@@ -1388,6 +1469,82 @@ app.post('/api/votes', authMiddleware, async (req, res) => {
     res.json(rows[0])
   } catch (err) {
     res.status(500).json({ error: '创建投票失败' })
+  }
+})
+
+// ============================================
+// 分享 API
+// ============================================
+
+app.post('/api/share', authMiddleware, async (req, res) => {
+  try {
+    const { type, id } = req.body
+    if (!type || !id) return res.status(400).json({ error: '缺少参数' })
+
+    if (type === 'topic') {
+      // 分享话题 → 记录推广并给积分
+      await autoExpireTopics()
+      const [topics] = await pool.query('SELECT * FROM topics WHERE id = ?', [id])
+      if (topics.length === 0) return res.status(404).json({ error: '话题不存在' })
+      const topic = topics[0]
+
+      if (topic.status !== 'active') return res.status(400).json({ error: '该话题已结束' })
+
+      // 检查奖励池
+      const reward = topic.promote_reward || 10
+      if ((topic.reward_type === 'points' || topic.reward_type === 'both' || !topic.reward_type) && topic.reward_pool > 0 && reward > topic.reward_pool) {
+        return res.status(400).json({ error: '奖励池积分不足' })
+      }
+
+      // 记录推广（允许同一个话题多次分享，每次分享都算一次推广）
+      const promoteId = genId()
+      await pool.query(
+        'INSERT INTO topic_promotes (id, topic_id, user_id, status, points_earned) VALUES (?, ?, ?, ?, ?)',
+        [promoteId, id, req.userId, 'shared', reward]
+      )
+
+      // 发积分
+      try {
+        await earnPoints(req.userId, reward, 'promote', `分享话题「${topic.title}」`)
+      } catch (e) {
+        if (!e.message?.includes('已达上限')) throw e
+      }
+
+      // 扣奖励池 + 更新计数
+      const newCount = (topic.promote_count || 0) + 1
+      const newPool = topic.reward_pool > 0 ? Math.max(0, topic.reward_pool - reward) : topic.reward_pool
+      const targetMet = topic.promote_target > 0 && newCount >= topic.promote_target
+      const poolEmpty = topic.reward_pool > 0 && newPool <= 0
+
+      await pool.query(
+        `UPDATE topics SET promote_count = ?, reward_pool = ?, participant_count = participant_count + 1${(targetMet || poolEmpty) ? ', status = ?' : ''} WHERE id = ?`,
+        (targetMet || poolEmpty)
+          ? [newCount, newPool, 'completed', id]
+          : [newCount, newPool, id]
+      )
+
+      res.json({ success: true, type: 'topic', reward })
+
+    } else if (type === 'content') {
+      // 分享内容 → +1 推广量
+      const [contents] = await pool.query('SELECT * FROM contents WHERE id = ?', [id])
+      if (contents.length === 0) return res.status(404).json({ error: '内容不存在' })
+
+      await pool.query('UPDATE contents SET promote_count = promote_count + 1, share_count = COALESCE(share_count, 0) + 1 WHERE id = ?', [id])
+
+      // 分享给积分
+      try {
+        await earnPoints(req.userId, 5, 'promote', '分享内容获得积分')
+      } catch {}
+
+      res.json({ success: true, type: 'content', reward: 5 })
+
+    } else {
+      return res.status(400).json({ error: '不支持的类型，请使用 topic 或 content' })
+    }
+  } catch (err) {
+    console.error('分享失败:', err)
+    res.status(500).json({ error: err.message || '分享失败' })
   }
 })
 

@@ -1,6 +1,6 @@
 // ===== 成就系统（真实逻辑） =====
 
-import { getUserAchievements, unlockAchievement, getUserById, getContents, getUserTasks } from './api/client'
+import { getUserAchievements, unlockAchievement, getUserStats } from './api/client'
 
 export interface AchievementDef {
   id: string
@@ -198,45 +198,21 @@ export const ACHIEVEMENTS: AchievementDef[] = [
  */
 export async function fetchUserStats(userId: string): Promise<UserStats> {
   try {
-    const [
-      user,
-      contents,
-      tasks,
-    ] = await Promise.all([
-      getUserById(userId),
-      getContents(1000, 0, undefined, userId),
-      getUserTasks(),
-    ])
+    const stats = await getUserStats(userId)
+    if (stats) return stats
+  } catch {}
 
-    const completedTasks = (tasks || []).filter((t: any) => t.status === 'completed').length
-
-    // 以下统计需要后端 /api/users/:id/stats 接口支持
-    // 目前用可用数据填充，其余返回 0
-    return {
-      totalPromotes: 0,       // TODO: 后端需提供 /api/users/:id/stats
-      contentPublished: (contents || []).length,
-      totalLikes: 0,           // TODO
-      totalComments: 0,        // TODO
-      consecutiveCheckInDays: 0, // TODO: 后端需提供 /api/checkin/streak
-      totalCheckInDays: 0,     // TODO
-      followers: 0,            // TODO: 后端需提供 /api/follows/counts/:id
-      totalPoints: (user as any)?.points || 0,
-      tasksCompleted: completedTasks,
-      votesParticipated: 0,    // TODO
-    }
-  } catch {
-    return {
-      totalPromotes: 0,
-      contentPublished: 0,
-      totalLikes: 0,
-      totalComments: 0,
-      consecutiveCheckInDays: 0,
-      totalCheckInDays: 0,
-      followers: 0,
-      totalPoints: 0,
-      tasksCompleted: 0,
-      votesParticipated: 0,
-    }
+  return {
+    totalPromotes: 0,
+    contentPublished: 0,
+    totalLikes: 0,
+    totalComments: 0,
+    consecutiveCheckInDays: 0,
+    totalCheckInDays: 0,
+    followers: 0,
+    totalPoints: 0,
+    tasksCompleted: 0,
+    votesParticipated: 0,
   }
 }
 

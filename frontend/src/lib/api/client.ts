@@ -83,6 +83,14 @@ export async function updateUser(id, data) {
   return put(`/api/users/${id}`, data)
 }
 
+export async function getUserStats(userId) {
+  try {
+    return await get(`/api/users/${userId}/stats`)
+  } catch {
+    return null
+  }
+}
+
 // ============================================
 // 内容
 // ============================================
@@ -455,21 +463,12 @@ export async function getInviteLeaderboard() {
 // 分享
 // ============================================
 
-export async function getTodayShareCount() {
-  try {
-    const data = await get('/api/share/today-count')
-    return data.count
-  } catch {
-    return 0
-  }
+export async function shareContent(contentId) {
+  return post('/api/share', { type: 'content', id: contentId })
 }
 
-export async function shareContent(userId, contentId) {
-  try {
-    return await post('/api/share', { content_id: contentId })
-  } catch {
-    return { earned: false, points: 0 }
-  }
+export async function shareTopic(topicId) {
+  return post('/api/share', { type: 'topic', id: topicId })
 }
 
 // ============================================
