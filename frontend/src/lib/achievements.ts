@@ -1,6 +1,6 @@
 // ===== 成就系统（真实逻辑） =====
 
-import { supabase, getUserAchievements, unlockAchievement } from './supabase/client'
+import { getUserAchievements, unlockAchievement, getUserById, getContents, getUserTasks } from './api/client'
 
 export interface AchievementDef {
   id: string
@@ -197,45 +197,46 @@ export const ACHIEVEMENTS: AchievementDef[] = [
  * 获取用户统计数据
  */
 export async function fetchUserStats(userId: string): Promise<UserStats> {
-  const [
-    { count: promoteCount },
-    { count: contentCount },
-    { count: likeCount },
-    { count: commentCount },
-    { data: signInData },
-    { count: followerCount },
-    { data: userData },
-    { count: taskCount },
-    { count: voteCount },
-  ] = await Promise.all([
-    supabase.from('promotes').select('*', { count: 'exact', head: true }).eq('user_id', userId),
-    supabase.from('contents').select('*', { count: 'exact', head: true }).eq('creator_id', userId),
-    supabase.from('interactions').select('*', { count: 'exact', head: true }).eq('user_id', userId).eq('action', 'like'),
-    supabase.from('comments').select('*', { count: 'exact', head: true }).eq('user_id', userId),
-    supabase.from('sign_ins').select('consecutive_days').eq('user_id', userId).order('sign_date', { ascending: false }).limit(1).single(),
-    supabase.from('follows').select('*', { count: 'exact', head: true }).eq('following_id', userId),
-    supabase.from('users').select('points').eq('id', userId).single(),
-    supabase.from('task_participants').select('*', { count: 'exact', head: true }).eq('user_id', userId).eq('status', 'completed'),
-    supabase.from('vote_records').select('*', { count: 'exact', head: true }).eq('user_id', userId),
-  ])
+  try {
+    const [
+      user,
+      contents,
+      tasks,
+    ] = await Promise.all([
+      getUserById(userId),
+      getContents(1000, 0, undefined, userId),
+      getUserTasks(),
+    ])
 
-  // 获取总签到天数
-  const { count: totalCheckIn } = await supabase
-    .from('sign_ins')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', userId)
+    const completedTasks = (tasks || []).filter((t: any) => t.status === 'completed').length
 
-  return {
-    totalPromotes: promoteCount || 0,
-    contentPublished: contentCount || 0,
-    totalLikes: likeCount || 0,
-    totalComments: commentCount || 0,
-    consecutiveCheckInDays: signInData?.consecutive_days || 0,
-    totalCheckInDays: totalCheckIn || 0,
-    followers: followerCount || 0,
-    totalPoints: userData?.points || 0,
-    tasksCompleted: taskCount || 0,
-    votesParticipated: voteCount || 0,
+    // 以下统计需要后端 /api/users/:id/stats 接口支持
+    // 目前用可用数据填充，其余返回 0
+    return {
+      totalPromotes: 0,       // TODO: 后端需提供 /api/users/:id/stats
+      contentPublished: (contents || []).length,
+      totalLikes: 0,           // TODO
+      totalComments: 0,        // TODO
+      consecutiveCheckInDays: 0, // TODO: 后端需提供 /api/checkin/streak
+      totalCheckInDays: 0,     // TODO
+      followers: 0,            // TODO: 后端需提供 /api/follows/counts/:id
+      totalPoints: (user as any)?.points || 0,
+      tasksCompleted: completedTasks,
+      votesParticipated: 0,    // TODO
+    }
+  } catch {
+    return {
+      totalPromotes: 0,
+      contentPublished: 0,
+      totalLikes: 0,
+      totalComments: 0,
+      consecutiveCheckInDays: 0,
+      totalCheckInDays: 0,
+      followers: 0,
+      totalPoints: 0,
+      tasksCompleted: 0,
+      votesParticipated: 0,
+    }
   }
 }
 
