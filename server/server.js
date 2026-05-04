@@ -76,27 +76,51 @@ function genId() { return uuidv4() }
 // 注册
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { username, password, name } = req.body
+    const { username, password, name, invite_code } = req.body
     if (!username || !password) return res.status(400).json({ error: '用户名和密码必填' })
 
     // 检查用户名是否已存在
     const [existing] = await pool.query('SELECT id FROM users WHERE username = ?', [username])
     if (existing.length > 0) return res.status(400).json({ error: '用户名已存在' })
 
+    // 处理邀请码
+    let referrerId = null
+    if (invite_code) {
+      const [codeRows] = await pool.query('SELECT user_id FROM referral_codes WHERE code = ?', [invite_code.toUpperCase()])
+      if (codeRows.length > 0) {
+        referrerId = codeRows[0].user_id
+      }
+    }
+
     const id = genId()
     const passwordHash = await bcrypt.hash(password, 10)
     const email = `${username}@julang.app`
     const avatar = '👤'
+    const initialPoints = referrerId ? 150 : 100
 
     await pool.query(
-      'INSERT INTO users (id, username, name, avatar, email, password_hash, points, level, experience) VALUES (?, ?, ?, ?, ?, ?, 100, 1, 0)',
-      [id, username, name || username, avatar, email, passwordHash]
+      'INSERT INTO users (id, username, name, avatar, email, password_hash, points, level, experience) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0)',
+      [id, username, name || username, avatar, email, passwordHash, initialPoints]
     )
+
+    // 创建邀请人关系记录
+    if (referrerId) {
+      await pool.query(
+        'INSERT INTO referrals (id, referrer_id, referred_id, referral_code, status, referrer_reward, referred_reward) VALUES (?, ?, ?, ?, ?, 100, 50)',
+        [genId(), referrerId, id, invite_code.toUpperCase(), 'registered']
+      )
+      // 邀请人获得积分
+      try { await earnPoints(referrerId, 100, 'invite', '邀请新用户注册奖励') } catch {}
+      // 更新邀请码使用次数
+      await pool.query('UPDATE referral_codes SET uses_count = uses_count + 1 WHERE user_id = ?', [referrerId])
+    }
 
     const token = jwt.sign({ userId: id }, process.env.JWT_SECRET, { expiresIn: '30d' })
 
     const [users] = await pool.query('SELECT * FROM users WHERE id = ?', [id])
-    res.json({ user: users[0], token })
+    const user = users[0]
+    delete user.password_hash
+    res.json({ user, token })
   } catch (err) {
     console.error('注册失败:', err)
     res.status(500).json({ error: '注册失败' })
@@ -225,11 +249,11 @@ app.get('/api/contents/:id', async (req, res) => {
 // 创建内容
 app.post('/api/contents', authMiddleware, async (req, res) => {
   try {
-    const { type, title, description, cover_url, tags, render_mode } = req.body
+    const { type, title, description, cover_url, url, tags, render_mode, render_src, render_config } = req.body
     const id = genId()
     await pool.query(
-      'INSERT INTO contents (id, type, title, description, cover_url, tags, render_mode, creator_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [id, type || 'article', title, description || '', cover_url || '', JSON.stringify(tags || []), render_mode || 'card', req.userId]
+      'INSERT INTO contents (id, type, title, description, cover_url, url, tags, render_mode, render_src, render_config, creator_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, type || 'article', title, description || '', cover_url || '', url || '', JSON.stringify(tags || []), render_mode || 'card', render_src || '', render_config ? JSON.stringify(render_config) : null, req.userId]
     )
     const [rows] = await pool.query('SELECT * FROM contents WHERE id = ?', [id])
     res.json(rows[0])
@@ -983,6 +1007,149 @@ app.get('/api/invite/leaderboard', async (req, res) => {
     })))
   } catch (err) {
     res.status(500).json({ error: '获取排行榜失败' })
+  }
+})
+
+// ============================================
+// 活动 API
+// ============================================
+
+app.get('/api/activities', async (req, res) => {
+  try {
+    const status = req.query.status || 'active'
+    const [rows] = await pool.query(
+      'SELECT * FROM activities WHERE status = ? ORDER BY created_at DESC',
+      [status]
+    )
+    res.json(rows)
+  } catch (err) {
+    res.status(500).json({ error: '获取活动失败' })
+  }
+})
+
+app.post('/api/activities', authMiddleware, async (req, res) => {
+  try {
+    const { type, title, description, reward, end_date, max_participants } = req.body
+    const id = genId()
+    const [users] = await pool.query('SELECT name, avatar FROM users WHERE id = ?', [req.userId])
+    const user = users[0] || { name: '', avatar: '👤' }
+
+    await pool.query(
+      'INSERT INTO activities (id, type, title, description, reward, end_date, max_participants, participant_count, status, created_by, creator_name, creator_avatar) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)',
+      [id, type || 'event', title, description || '', reward || '', end_date || null, max_participants || 0, 'active', req.userId, user.name, user.avatar]
+    )
+    const [rows] = await pool.query('SELECT * FROM activities WHERE id = ?', [id])
+    res.json(rows[0])
+  } catch (err) {
+    res.status(500).json({ error: '创建活动失败' })
+  }
+})
+
+app.post('/api/activities/:id/join', authMiddleware, async (req, res) => {
+  try {
+    const [existing] = await pool.query(
+      'SELECT id FROM activity_participants WHERE activity_id = ? AND user_id = ?',
+      [req.params.id, req.userId]
+    )
+    if (existing.length > 0) return res.status(400).json({ error: '已参与该活动' })
+
+    await pool.query(
+      'INSERT INTO activity_participants (id, activity_id, user_id) VALUES (?, ?, ?)',
+      [genId(), req.params.id, req.userId]
+    )
+    await pool.query('UPDATE activities SET participant_count = participant_count + 1 WHERE id = ?', [req.params.id])
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ error: '参与活动失败' })
+  }
+})
+
+// ============================================
+// 话题创建 API
+// ============================================
+
+app.post('/api/topics', authMiddleware, async (req, res) => {
+  try {
+    const {
+      title, description, type, tags, status,
+      hot_score, participant_count, meme_count,
+      creator_type, brand_name, brand_logo, brand_description,
+      promote_reward, promote_target, promote_count,
+      reward_type, reward_description, reward_pool,
+      coupon_type, coupon_value, coupon_count,
+    } = req.body
+
+    const id = genId()
+    const [users] = await pool.query('SELECT name, avatar FROM users WHERE id = ?', [req.userId])
+    const user = users[0] || { name: '', avatar: '👤' }
+
+    await pool.query(
+      `INSERT INTO topics (id, title, description, type, tags, status, hot_score, participant_count, meme_count,
+        creator_id, creator_name, creator_avatar, creator_type,
+        brand_name, brand_logo, brand_description,
+        promote_reward, promote_target, promote_count,
+        reward_type, reward_description, reward_pool,
+        coupon_type, coupon_value, coupon_count, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, title, description || '', type || 'discussion',
+        typeof tags === 'string' ? tags : JSON.stringify(tags || []),
+        status || 'active', 0, 0, 0,
+        req.userId, user.name, user.avatar, creator_type || 'personal',
+        brand_name || '', brand_logo || '', brand_description || '',
+        promote_reward || 20, promote_target || 100, promote_count || 0,
+        reward_type || 'points', reward_description || '', reward_pool || 0,
+        coupon_type || '', coupon_value || '', coupon_count || 0,
+        req.userId]
+    )
+
+    // 发布话题给积分
+    try { await earnPoints(req.userId, 10, 'publish', '发布话题获得积分') } catch {}
+
+    const [rows] = await pool.query('SELECT * FROM topics WHERE id = ?', [id])
+    res.json(rows[0])
+  } catch (err) {
+    console.error('创建话题失败:', err)
+    res.status(500).json({ error: '创建话题失败' })
+  }
+})
+
+// ============================================
+// 投票创建 API
+// ============================================
+
+app.post('/api/votes', authMiddleware, async (req, res) => {
+  try {
+    const { title, description, options, vote_cost, vote_reward, end_date } = req.body
+    if (!options || !Array.isArray(options) || options.length < 2) {
+      return res.status(400).json({ error: '至少需要2个选项' })
+    }
+
+    const id = genId()
+    await pool.query(
+      'INSERT INTO votes (id, title, description, options, vote_cost, vote_reward, end_date, status, total_votes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)',
+      [id, title, description || '', JSON.stringify(options), vote_cost || 0, vote_reward || 0, end_date || null, 'active', req.userId]
+    )
+    const [rows] = await pool.query('SELECT * FROM votes WHERE id = ?', [id])
+    res.json(rows[0])
+  } catch (err) {
+    res.status(500).json({ error: '创建投票失败' })
+  }
+})
+
+// ============================================
+// 帮推历史 API
+// ============================================
+
+app.get('/api/promotes/history', authMiddleware, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50
+    const [rows] = await pool.query(
+      'SELECT p.*, c.title as content_title FROM promotes p LEFT JOIN contents c ON p.content_id = c.id WHERE p.user_id = ? ORDER BY p.created_at DESC LIMIT ?',
+      [req.userId, limit]
+    )
+    res.json(rows)
+  } catch (err) {
+    res.status(500).json({ error: '获取帮推历史失败' })
   }
 })
 

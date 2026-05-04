@@ -332,6 +332,8 @@ async function executeQuery(table: string, method: string, body: any, chain: { o
     let inValues: any[] | null = null
     let gteField: string | null = null
     let gteValue: any = null
+    let rangeFrom: number | null = null
+    let rangeTo: number | null = null
 
     for (const c of chain) {
       switch (c.op) {
@@ -343,6 +345,7 @@ async function executeQuery(table: string, method: string, body: any, chain: { o
         case 'ilike': likeField = c.args[0]; likePattern = c.args[1]; break
         case 'in': inField = c.args[0]; inValues = c.args[1]; break
         case 'gte': gteField = c.args[0]; gteValue = c.args[1]; break
+        case 'range': rangeFrom = c.args[0]; rangeTo = c.args[1]; break
       }
     }
 
@@ -356,6 +359,9 @@ async function executeQuery(table: string, method: string, body: any, chain: { o
       if (table === 'sign_ins') return { data: await apiPost('/api/checkin', {}), error: null }
       if (table === 'memes') return { data: await apiPost('/api/memes', body), error: null }
       if (table === 'contents') return { data: await apiPost('/api/contents', body), error: null }
+      if (table === 'topics') return { data: await apiPost('/api/topics', body), error: null }
+      if (table === 'votes') return { data: await apiPost('/api/votes', body), error: null }
+      if (table === 'topic_promotes') return { data: await apiPost('/api/topics/promotes', body), error: null }
       if (table === 'referrals') return { data: body, error: null }
       if (table === 'referral_codes') return { data: body, error: null }
       if (table === 'vote_records') return { data: body, error: null }
@@ -387,6 +393,10 @@ async function executeQuery(table: string, method: string, body: any, chain: { o
     }
 
     // SELECT (default)
+    // range(from, to) is inclusive: offset = from, limit = to - from + 1
+    const effectiveLimit = rangeFrom !== null ? (rangeTo! - rangeFrom + 1) : (limitN || 20)
+    const effectiveOffset = rangeFrom ?? 0
+
     let data: any = null
 
     if (likeField && likePattern) {
@@ -398,13 +408,28 @@ async function executeQuery(table: string, method: string, body: any, chain: { o
       else data = []
     } else if (eqField && eqValue !== null) {
       // 按字段查询
-      if (table === 'users' && eqField === 'id') data = await getUserById(eqValue)
+      if (table === 'users' && eqField === 'id') {
+        // .in('id', ids) with single value should still work
+        if (inField && inValues && inValues.length > 0) {
+          // batch query users by ids
+          const allUsers = await Promise.all(inValues.map((uid: string) => getUserById(uid)))
+          data = allUsers.filter(Boolean)
+        } else {
+          data = await getUserById(eqValue)
+        }
+      }
       else if (table === 'contents' && eqField === 'id') data = await getContentById(eqValue)
       else if (table === 'topics' && eqField === 'id') data = await getTopicById(eqValue)
       else if (table === 'users' && eqField === 'username') {
-        // 按用户名查用户：调用 search 或返回 null
         const results = await search(eqValue)
         data = (results.contents || []).find((u: any) => u.username === eqValue) || null
+      }
+      // 后端已自动过滤 status='published' / 'active'，前端 .eq('status',...) 直接忽略，走正常查询
+      else if ((table === 'contents' || table === 'memes' || table === 'activities') && eqField === 'status') {
+        // 回退到无条件查询
+        if (table === 'contents') data = await getContents(effectiveLimit, effectiveOffset)
+        else if (table === 'memes') data = await apiGet(`/api/memes?limit=${effectiveLimit}&offset=${effectiveOffset}`)
+        else if (table === 'activities') data = await getActivities()
       }
       else if (table === 'sign_ins' && eqField === 'user_id') data = []
       else if (table === 'interactions' && eqField === 'user_id') data = []
@@ -416,24 +441,46 @@ async function executeQuery(table: string, method: string, body: any, chain: { o
       else if (table === 'task_participants' && eqField === 'user_id') data = []
       else if (table === 'activity_participants' && eqField === 'user_id') data = []
       else if (table === 'user_achievements' && eqField === 'user_id') data = []
-      else if (table === 'point_logs' && eqField === 'user_id') data = await getPointsHistory(eqValue, limitN || 50)
+      else if (table === 'point_logs' && eqField === 'user_id') data = await getPointsHistory(eqValue, effectiveLimit)
       else if (table === 'point_records' && eqField === 'user_id') data = []
       else if (table === 'notifications' && eqField === 'user_id') data = await getNotifications()
       else if (table === 'daily_point_limits' && eqField === 'user_id') data = null
+      else if (table === 'topic_promotes' && eqField === 'topic_id') data = []
+      else if (table === 'topic_promotes' && eqField === 'user_id') data = null
+      else if (table === 'comments' && eqField === 'target_type') {
+        // .eq('target_type', 'X').in('target_id', ids) → 批量查评论
+        if (inField === 'target_id' && inValues && inValues.length > 0) {
+          const allComments = await Promise.all(
+            inValues.map((tid: string) => getComments(eqValue, tid).catch(() => []))
+          )
+          data = allComments.flat()
+        } else {
+          data = []
+        }
+      }
       else data = null
     } else if (inField && inValues) {
-      data = []
+      // Handle .in('field', [values]) queries
+      if (table === 'users' && inField === 'id' && inValues.length > 0) {
+        const allUsers = await Promise.all(inValues.map((uid: string) => getUserById(uid).catch(() => null)))
+        data = allUsers.filter(Boolean)
+      } else if (table === 'comments' && inField === 'target_id') {
+        // comments by target_ids — not directly supported, return empty
+        data = []
+      } else {
+        data = []
+      }
     } else {
       // 无条件查询
-      if (table === 'contents') data = await getContents(limitN || 20, 0)
-      else if (table === 'memes') data = await apiGet(`/api/memes?limit=${limitN || 20}`)
+      if (table === 'contents') data = await getContents(effectiveLimit, effectiveOffset)
+      else if (table === 'memes') data = await apiGet(`/api/memes?limit=${effectiveLimit}&offset=${effectiveOffset}`)
       else if (table === 'topics') data = await getTopics()
       else if (table === 'notifications') data = await getNotifications()
       else if (table === 'activities') data = await getActivities()
       else if (table === 'votes') data = await getVotes()
       else if (table === 'tasks') data = await getTasks()
       else if (table === 'user_achievements') data = await apiGet('/api/achievements')
-      else if (table === 'point_logs') data = await getPointsHistory('', limitN || 50)
+      else if (table === 'point_logs') data = await getPointsHistory('', effectiveLimit)
       else if (table === 'referrals') data = []
       else if (table === 'sign_ins') data = []
       else if (table === 'promotes') data = []

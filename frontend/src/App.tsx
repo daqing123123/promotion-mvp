@@ -107,7 +107,7 @@ function AppLayout() {
             <Route path="/search" element={<Search />} />
             <Route path="/chat" element={user ? <ChatPage user={user} /> : <Login setUser={setUser} />} />
             <Route path="/login" element={<Login setUser={setUser} />} />
-            <Route path="/register" element={<Register />} />
+            <Route path="/register" element={<Register setUser={setUser} />} />
             <Route path="/publish" element={user ? <PublishV2 user={user} isMobile={isMobile} setUser={setUser} /> : <Login setUser={setUser} />} />
             <Route path="/profile" element={user ? <Profile user={user} setUser={setUser} /> : <Login setUser={setUser} />} />
             <Route path="/profile/:id" element={user ? <Profile user={user} setUser={setUser} /> : <Login setUser={setUser} />} />

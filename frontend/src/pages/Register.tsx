@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { signUp } from '../lib/api/client'
 
-export default function Register() {
+export default function Register({ setUser }: { setUser: any }) {
   const [username, setUsername] = useState('')
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
@@ -31,7 +31,18 @@ export default function Register() {
     setError('')
 
     try {
-      const { user, token } = await signUp(username.toLowerCase(), password, name || username)
+      const data = await signUp(username.toLowerCase(), password, name || username, refCode || undefined)
+      // 注册成功 = 自动登录，设置 user 状态
+      setUser({
+        id: data.user.id,
+        name: data.user.name,
+        username: data.user.username,
+        avatar: data.user.avatar,
+        bio: data.user.bio || '',
+        tags: data.user.tags || [],
+        points: data.user.points || 0,
+        level: data.user.level || 1,
+      })
       nav('/')
     } catch (err: any) {
       const msg = err.message || ''

@@ -44,9 +44,12 @@ function put(path, body) {
 // 认证
 // ============================================
 
-export async function signUp(username, password, name) {
-  const data = await post('/api/auth/register', { username, password, name })
+export async function signUp(username, password, name, inviteCode) {
+  const body: any = { username, password, name }
+  if (inviteCode) body.invite_code = inviteCode
+  const data = await post('/api/auth/register', body)
   localStorage.setItem('julang_token', data.token)
+  localStorage.setItem('user', JSON.stringify(data.user))
   return data
 }
 
