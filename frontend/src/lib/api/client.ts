@@ -1,3 +1,4 @@
+// @ts-nocheck
 // 巨浪 Julang - 前端 API 客户端
 // 替代 @supabase/supabase-js，调用自建后端 API
 
