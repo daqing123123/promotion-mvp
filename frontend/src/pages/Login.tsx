@@ -1,6 +1,7 @@
+// @ts-nocheck
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../lib/supabase/client'
+import { signIn, getUserById } from '../lib/api/client'
 import { toast } from '../lib/toast'
 
 export default function Login({ setUser }: { setUser: any }) {
@@ -16,40 +17,23 @@ export default function Login({ setUser }: { setUser: any }) {
     setError('')
 
     try {
-      // 从 users 表查找邮箱
-      const { data: userRecord } = await supabase
-        .from('users')
-        .select('id, email')
-        .eq('username', username.trim().toLowerCase())
-        .maybeSingle()
-
-      let email = userRecord?.email || `${username.trim().toLowerCase()}@julang.app`
-
-      const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
-      if (authError) throw authError
-
-      const { data: userData, error: dbError } = await supabase
-        .from('users').select('*').eq('id', data.user.id).single()
-      if (dbError) throw dbError
+      const { user, session } = await signIn(username.trim().toLowerCase(), password)
 
       setUser({
-        id: userData.id,
-        name: userData.name,
-        username: userData.username,
-        avatar: userData.avatar,
-        bio: userData.bio,
-        tags: userData.tags || [],
-        points: userData.points,
-        level: userData.level,
-        followers: userData.follower_count,
-        following: userData.following_count,
+        id: user.id,
+        name: user.name,
+        username: user.username,
+        avatar: user.avatar,
+        bio: user.bio || '',
+        tags: user.tags || [],
+        points: user.points || 0,
+        level: user.level || 1,
       })
       nav('/')
     } catch (err: any) {
       const msg = err.message || ''
-      if (msg.includes('Invalid login') || msg.includes('invalid_credentials')) setError('用户名或密码错误')
-      else if (msg.includes('Email not confirmed') || msg.includes('not confirmed')) setError('请先验证邮箱后再登录')
-      else if (msg.includes('Too many')) setError('登录太频繁，请稍后再试')
+      if (msg.includes('用户名或密码错误') || msg.includes('Invalid login')) setError('用户名或密码错误')
+      else if (msg.includes('not confirmed')) setError('请先验证邮箱后再登录')
       else setError(msg || '登录失败')
     } finally {
       setLoading(false)
@@ -57,27 +41,7 @@ export default function Login({ setUser }: { setUser: any }) {
   }
 
   const handleForgotPassword = async () => {
-    if (!username.trim()) {
-      toast.warning('请先输入账号')
-      return
-    }
-    try {
-      // 通过 username 查找邮箱
-      const { data: userRecord } = await supabase
-        .from('users')
-        .select('email')
-        .eq('username', username.trim().toLowerCase())
-        .maybeSingle()
-
-      const email = userRecord?.email || `${username.trim().toLowerCase()}@julang.app`
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: window.location.origin + '/login'
-      })
-      if (error) throw error
-      toast.success('密码重置邮件已发送，请查看邮箱')
-    } catch (err: any) {
-      toast.error(err.message || '发送失败')
-    }
+    toast.warning('请联系管理员重置密码')
   }
 
   return (

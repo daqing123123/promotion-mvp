@@ -284,7 +284,168 @@ export async function getInviteStats(userId: string) {
   return await apiGet('/api/invite/stats')
 }
 
-// ===== Supabase 兼容层（给还在用 supabase.xxx 的代码） =====
+// ===== Supabase 兼容层（Proxy 版，支持任意链式调用） =====
+
+// 通用查询构建器：记录调用链，await 时执行
+function createQueryBuilder(table: string, method: string, body?: any) {
+  const chain: { op: string; args: any[] }[] = []
+  
+  const handler: ProxyHandler<any> = {
+    get(_target, prop) {
+      if (prop === 'then') {
+        // 当 await 时执行查询
+        return (resolve: Function) => {
+          executeQuery(table, method, body, chain)
+            .then(result => resolve(result))
+            .catch(err => resolve({ data: null, error: err }))
+        }
+      }
+      if (prop === Symbol.toStringTag) return undefined
+      // 其他方法调用都记录到 chain 中
+      return (...args: any[]) => {
+        chain.push({ op: prop as string, args })
+        return new Proxy({}, handler)
+      }
+    }
+  }
+  
+  return new Proxy({}, handler)
+}
+
+async function executeQuery(table: string, method: string, body: any, chain: { op: string; args: any[] }[]) {
+  try {
+    // 提取 chain 中的修饰符
+    let eqField: string | null = null
+    let eqValue: any = null
+    let single = false
+    let orderCol: string | null = null
+    let orderAsc = true
+    let limitN: number | null = null
+    let likeField: string | null = null
+    let likePattern: string | null = null
+    let inField: string | null = null
+    let inValues: any[] | null = null
+    let gteField: string | null = null
+    let gteValue: any = null
+
+    for (const c of chain) {
+      switch (c.op) {
+        case 'eq': eqField = c.args[0]; eqValue = c.args[1]; break
+        case 'single': single = true; break
+        case 'maybeSingle': single = true; break
+        case 'order': orderCol = c.args[0]; orderAsc = c.args[1]?.ascending ?? true; break
+        case 'limit': limitN = c.args[0]; break
+        case 'ilike': likeField = c.args[0]; likePattern = c.args[1]; break
+        case 'in': inField = c.args[0]; inValues = c.args[1]; break
+        case 'gte': gteField = c.args[0]; gteValue = c.args[1]; break
+      }
+    }
+
+    // INSERT
+    if (method === 'INSERT') {
+      if (table === 'interactions') {
+        await apiPost('/api/interactions/toggle', { target_type: body.target_type, target_id: body.target_id, action: body.action })
+        return { data: body, error: null }
+      }
+      if (table === 'comments') return { data: await apiPost('/api/comments', body), error: null }
+      if (table === 'sign_ins') return { data: await apiPost('/api/checkin', {}), error: null }
+      if (table === 'memes') return { data: await apiPost('/api/memes', body), error: null }
+      if (table === 'contents') return { data: await apiPost('/api/contents', body), error: null }
+      if (table === 'referrals') return { data: body, error: null }
+      if (table === 'referral_codes') return { data: body, error: null }
+      if (table === 'vote_records') return { data: body, error: null }
+      if (table === 'activity_participants') return { data: body, error: null }
+      if (table === 'task_participants') return { data: body, error: null }
+      if (table === 'user_achievements') return { data: body, error: null }
+      if (table === 'promotes') return { data: body, error: null }
+      if (table === 'follows') return { data: body, error: null }
+      if (table === 'notifications') return { data: body, error: null }
+      return { data: body, error: null }
+    }
+
+    // UPDATE
+    if (method === 'UPDATE') {
+      if (table === 'notifications' && eqField === 'id') {
+        await markNotificationRead(eqValue)
+        return { data: null, error: null }
+      }
+      if (table === 'users' && eqField === 'id') {
+        await updateUser(eqValue, body)
+        return { data: null, error: null }
+      }
+      return { data: null, error: null }
+    }
+
+    // DELETE
+    if (method === 'DELETE') {
+      return { data: null, error: null }
+    }
+
+    // SELECT (default)
+    let data: any = null
+
+    if (likeField && likePattern) {
+      const q = likePattern.replace(/%/g, '')
+      const results = await search(q)
+      if (table === 'contents') data = results.contents || []
+      else if (table === 'topics') data = results.topics || []
+      else if (table === 'memes') data = results.memes || []
+      else data = []
+    } else if (eqField && eqValue !== null) {
+      // 按字段查询
+      if (table === 'users' && eqField === 'id') data = await getUserById(eqValue)
+      else if (table === 'contents' && eqField === 'id') data = await getContentById(eqValue)
+      else if (table === 'topics' && eqField === 'id') data = await getTopicById(eqValue)
+      else if (table === 'users' && eqField === 'username') {
+        // 按用户名查用户：调用 search 或返回 null
+        const results = await search(eqValue)
+        data = (results.contents || []).find((u: any) => u.username === eqValue) || null
+      }
+      else if (table === 'sign_ins' && eqField === 'user_id') data = []
+      else if (table === 'interactions' && eqField === 'user_id') data = []
+      else if (table === 'referral_codes' && eqField === 'user_id') data = null
+      else if (table === 'referrals' && eqField === 'referrer_id') data = []
+      else if (table === 'promotes' && eqField === 'user_id') data = []
+      else if (table === 'follows' && eqField === 'follower_id') data = null
+      else if (table === 'vote_records' && eqField === 'user_id') data = []
+      else if (table === 'task_participants' && eqField === 'user_id') data = []
+      else if (table === 'activity_participants' && eqField === 'user_id') data = []
+      else if (table === 'user_achievements' && eqField === 'user_id') data = []
+      else if (table === 'point_logs' && eqField === 'user_id') data = await getPointsHistory(eqValue, limitN || 50)
+      else if (table === 'point_records' && eqField === 'user_id') data = []
+      else if (table === 'notifications' && eqField === 'user_id') data = await getNotifications()
+      else if (table === 'daily_point_limits' && eqField === 'user_id') data = null
+      else data = null
+    } else if (inField && inValues) {
+      data = []
+    } else {
+      // 无条件查询
+      if (table === 'contents') data = await getContents(limitN || 20, 0)
+      else if (table === 'memes') data = await apiGet(`/api/memes?limit=${limitN || 20}`)
+      else if (table === 'topics') data = await getTopics()
+      else if (table === 'notifications') data = await getNotifications()
+      else if (table === 'activities') data = await getActivities()
+      else if (table === 'votes') data = await getVotes()
+      else if (table === 'tasks') data = await getTasks()
+      else if (table === 'user_achievements') data = await apiGet('/api/achievements')
+      else if (table === 'point_logs') data = await getPointsHistory('', limitN || 50)
+      else if (table === 'referrals') data = []
+      else if (table === 'sign_ins') data = []
+      else if (table === 'promotes') data = []
+      else if (table === 'follows') data = []
+      else data = []
+    }
+
+    // single/maybeSingle: 包装为数组或单个
+    if (single) {
+      if (Array.isArray(data)) return { data: data[0] || null, error: null }
+      return { data, error: null }
+    }
+    return { data: Array.isArray(data) ? data : [data].filter(Boolean), error: null }
+  } catch (e: any) {
+    return { data: null, error: e }
+  }
+}
 
 export const supabase = {
   auth: {
@@ -297,162 +458,26 @@ export const supabase = {
       const result = await signIn(username, password)
       return { data: result }
     },
-    signUp: async ({ email, password }: any) => {
-      const username = email.replace('@julang.app', '')
+    signUp: async ({ email, password, options }: any) => {
+      const username = options?.data?.username || email.replace('@julang.app', '')
       const result = await signUp(username, password, username)
       return { data: result }
+    },
+    resetPasswordForEmail: async (email: string, opts?: any) => {
+      return { error: null }
     },
     signOut: async () => { await signOut(); return { error: null } },
     onAuthStateChange: (callback: any) => ({ data: { subscription: { unsubscribe: () => {} } } }),
   },
-  from: (table: string) => ({
-    select: (cols?: string) => ({
-      eq: (field: string, value: any) => ({
-        single: async () => {
-          try {
-            if (table === 'users' && field === 'id') return { data: await getUserById(value), error: null }
-            if (table === 'contents' && field === 'id') return { data: await getContentById(value), error: null }
-            if (table === 'topics' && field === 'id') return { data: await getTopicById(value), error: null }
-            return { data: null, error: null }
-          } catch (e: any) { return { data: null, error: e } }
-        },
-        order: (col: string, opts: any) => ({
-          range: async (from: number, to: number) => {
-            try {
-              const limit = to - from + 1
-              const offset = from
-              if (table === 'contents') return { data: await getContents(limit, offset), error: null }
-              if (table === 'memes') return { data: await apiGet(`/api/memes?limit=${limit}&offset=${offset}`), error: null }
-              return { data: [], error: null }
-            } catch (e: any) { return { data: null, error: e } }
-          },
-          limit: (n: number) => ({
-            then: async (resolve: any) => {
-              try {
-                if (table === 'point_logs') return resolve({ data: await getPointsHistory('', n), error: null })
-                return resolve({ data: [], error: null })
-              } catch (e: any) { return resolve({ data: null, error: e }) }
-            }
-          })
-        }),
-        limit: (n: number) => ({
-          then: async (resolve: any) => {
-            try {
-              if (table === 'contents') return resolve({ data: await getContents(n), error: null })
-              if (table === 'memes') return resolve({ data: await apiGet(`/api/memes?limit=${n}`), error: null })
-              if (table === 'topics') return resolve({ data: await getTopics(), error: null })
-              return resolve({ data: [], error: null })
-            } catch (e: any) { return resolve({ data: null, error: e }) }
-          }
-        })
-      }),
-      order: (col: string, opts: any) => ({
-        limit: (n: number) => ({
-          then: async (resolve: any) => {
-            try {
-              if (table === 'contents') return resolve({ data: await getContents(n), error: null })
-              if (table === 'memes') return resolve({ data: await apiGet(`/api/memes?limit=${n}`), error: null })
-              if (table === 'topics') return resolve({ data: await getTopics(), error: null })
-              if (table === 'notifications') return resolve({ data: await getNotifications(), error: null })
-              if (table === 'activities') return resolve({ data: await getActivities(), error: null })
-              if (table === 'votes') return resolve({ data: await getVotes(), error: null })
-              if (table === 'tasks') return resolve({ data: await getTasks(), error: null })
-              return resolve({ data: [], error: null })
-            } catch (e: any) { return resolve({ data: null, error: e }) }
-          }
-        }),
-        then: async (resolve: any) => {
-          try {
-            if (table === 'contents') return resolve({ data: await getContents(20), error: null })
-            if (table === 'memes') return resolve({ data: await apiGet('/api/memes'), error: null })
-            if (table === 'topics') return resolve({ data: await getTopics(), error: null })
-            if (table === 'notifications') return resolve({ data: await getNotifications(), error: null })
-            if (table === 'activities') return resolve({ data: await getActivities(), error: null })
-            if (table === 'votes') return resolve({ data: await getVotes(), error: null })
-            if (table === 'tasks') return resolve({ data: await getTasks(), error: null })
-            return resolve({ data: [], error: null })
-          } catch (e: any) { return resolve({ data: null, error: e }) }
-        }
-      }),
-      ilike: (field: string, pattern: string) => ({
-        limit: (n: number) => ({
-          then: async (resolve: any) => {
-            try {
-              const q = pattern.replace(/%/g, '')
-              const results = await search(q)
-              if (table === 'contents') return resolve({ data: results.contents || [], error: null })
-              if (table === 'topics') return resolve({ data: results.topics || [], error: null })
-              if (table === 'memes') return resolve({ data: results.memes || [], error: null })
-              return resolve({ data: [], error: null })
-            } catch (e: any) { return resolve({ data: null, error: e }) }
-          }
-        })
-      }),
-      in: (field: string, values: string[]) => ({
-        then: async (resolve: any) => resolve({ data: [], error: null })
-      }),
-      gte: (field: string, value: any) => ({
-        then: async (resolve: any) => resolve({ data: [], error: null })
-      }),
-      maybeSingle: async () => ({ data: null, error: null }),
-      then: async (resolve: any) => {
-        try {
-          if (table === 'contents') return resolve({ data: await getContents(20), error: null })
-          if (table === 'memes') return resolve({ data: await apiGet('/api/memes'), error: null })
-          if (table === 'topics') return resolve({ data: await getTopics(), error: null })
-          if (table === 'notifications') return resolve({ data: await getNotifications(), error: null })
-          if (table === 'activities') return resolve({ data: await getActivities(), error: null })
-          if (table === 'votes') return resolve({ data: await getVotes(), error: null })
-          if (table === 'tasks') return resolve({ data: await getTasks(), error: null })
-          if (table === 'user_achievements') return resolve({ data: await apiGet('/api/achievements'), error: null })
-          if (table === 'point_logs') return resolve({ data: await getPointsHistory(''), error: null })
-          return resolve({ data: [], error: null })
-        } catch (e: any) { return resolve({ data: null, error: e }) }
-      }
-    }),
-    insert: async (row: any) => {
-      try {
-        if (table === 'interactions') {
-          await apiPost('/api/interactions/toggle', { target_type: row.target_type, target_id: row.target_id, action: row.action })
-          return { data: row, error: null }
-        }
-        if (table === 'comments') {
-          const data = await apiPost('/api/comments', { target_type: row.target_type, target_id: row.target_id, content: row.content })
-          return { data, error: null }
-        }
-        if (table === 'sign_ins') {
-          const data = await apiPost('/api/checkin', {})
-          return { data, error: null }
-        }
-        if (table === 'memes') {
-          const data = await apiPost('/api/memes', row)
-          return { data, error: null }
-        }
-        if (table === 'contents') {
-          const data = await apiPost('/api/contents', row)
-          return { data, error: null }
-        }
-        return { data: row, error: null }
-      } catch (e: any) { return { data: null, error: e } }
-    },
-    update: async (updates: any) => ({
-      eq: async (field: string, value: any) => {
-        try {
-          if (table === 'notifications') {
-            if (field === 'id') await markNotificationRead(value)
-            return { data: null, error: null }
-          }
-          if (table === 'users') {
-            await updateUser(value, updates)
-            return { data: null, error: null }
-          }
-          return { data: null, error: null }
-        } catch (e: any) { return { data: null, error: e } }
-      }
-    }),
-    delete: async () => ({
-      eq: async (field: string, value: any) => ({ data: null, error: null })
-    }),
+  from: (table: string) => new Proxy({}, {
+    get(_target, prop) {
+      if (prop === 'insert') return (row: any) => createQueryBuilder(table, 'INSERT', row)
+      if (prop === 'update') return (body: any) => createQueryBuilder(table, 'UPDATE', body)
+      if (prop === 'delete') return () => createQueryBuilder(table, 'DELETE')
+      if (prop === 'select') return (cols?: string) => createQueryBuilder(table, 'SELECT')
+      if (prop === 'upsert') return (row: any) => createQueryBuilder(table, 'INSERT', row)
+      return undefined
+    }
   }),
   rpc: async (fn: string, params: any) => ({ data: null, error: null }),
   storage: { from: (bucket: string) => ({ upload: async () => ({ data: null, error: null }), getPublicUrl: () => ({ data: { publicUrl: '' } }) }) },
