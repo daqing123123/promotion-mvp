@@ -142,6 +142,14 @@ export async function claimTopicCoupon(topicId) {
   return post(`/api/topics/${topicId}/coupon`)
 }
 
+export async function getMyCoupons() {
+  try {
+    return await get('/api/coupons/my')
+  } catch {
+    return []
+  }
+}
+
 // ============================================
 // 梗
 // ============================================

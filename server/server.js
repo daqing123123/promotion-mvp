@@ -1114,6 +1114,261 @@ app.post('/api/topics', authMiddleware, async (req, res) => {
 })
 
 // ============================================
+// 话题更新 API
+// ============================================
+
+app.put('/api/topics/:id', authMiddleware, async (req, res) => {
+  try {
+    const fields = []
+    const values = []
+    const allowed = [
+      'title','description','status','hot_score','participant_count','meme_count','like_count',
+      'promote_reward','promote_target','promote_count',
+      'reward_type','reward_description','reward_pool',
+      'coupon_type','coupon_value','coupon_count','coupon_claimed',
+      'end_date'
+    ]
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) {
+        fields.push(`${key} = ?`)
+        values.push(req.body[key])
+      }
+    }
+    if (fields.length === 0) return res.status(400).json({ error: '没有要更新的字段' })
+    values.push(req.params.id)
+    await pool.query(`UPDATE topics SET ${fields.join(', ')} WHERE id = ?`, values)
+    const [rows] = await pool.query('SELECT * FROM topics WHERE id = ?', [req.params.id])
+    res.json(rows[0])
+  } catch (err) {
+    console.error('更新话题失败:', err)
+    res.status(500).json({ error: '更新话题失败' })
+  }
+})
+
+// ============================================
+// 话题推广 API（核心：接受推广 → 记录 → 给积分 → 扣奖励池）
+// ============================================
+
+// 获取话题推广记录列表
+app.get('/api/topics/:id/promotes', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT * FROM topic_promotes WHERE topic_id = ? ORDER BY created_at DESC',
+      [req.params.id]
+    )
+    res.json(rows)
+  } catch (err) {
+    // 表不存在时返回空数组
+    res.json([])
+  }
+})
+
+// 接受推广任务（普通用户推广话题）
+app.post('/api/topics/:id/promotes', authMiddleware, async (req, res) => {
+  try {
+    const topicId = req.params.id
+    const userId = req.userId
+    const { receiver_name, receiver_phone, receiver_address } = req.body
+
+    // 1. 获取话题信息
+    const [topics] = await pool.query('SELECT * FROM topics WHERE id = ?', [topicId])
+    if (topics.length === 0) return res.status(404).json({ error: '话题不存在' })
+    const topic = topics[0]
+
+    // 2. 话题必须活跃
+    if (topic.status !== 'active') return res.status(400).json({ error: '该话题已结束' })
+
+    // 3. 不能推广自己的话题
+    if (topic.created_by === userId || topic.creator_id === userId) {
+      return res.status(400).json({ error: '不能推广自己的话题' })
+    }
+
+    // 4. 检查是否已经推广过
+    const [existing] = await pool.query(
+      'SELECT id FROM topic_promotes WHERE topic_id = ? AND user_id = ?',
+      [topicId, userId]
+    )
+    if (existing.length > 0) return res.status(400).json({ error: '已经推广过该话题了' })
+
+    // 5. 检查奖励池
+    const promoteReward = topic.promote_reward || 20
+    const rewardPool = topic.reward_pool || 0
+    const promoteTarget = topic.promote_target || 100
+    const currentCount = (topic.promote_count || 0) + 1
+
+    // 积分奖励类型：检查奖励池是否够
+    if ((topic.reward_type === 'points' || topic.reward_type === 'both' || !topic.reward_type) && rewardPool > 0 && promoteReward > rewardPool) {
+      return res.status(400).json({ error: '奖励池积分不足，推广已结束' })
+    }
+
+    // 6. 记录推广
+    const promoteId = genId()
+    await pool.query(
+      'INSERT INTO topic_promotes (id, topic_id, user_id, status, points_earned, receiver_name, receiver_phone, receiver_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [promoteId, topicId, userId, req.body.status || 'accepted', promoteReward, receiver_name || null, receiver_phone || null, receiver_address || null]
+    )
+
+    // 7. 发积分
+    try {
+      await earnPoints(userId, promoteReward, 'promote', `推广话题「${topic.title}」`)
+    } catch (e: any) {
+      // 如果积分达上限，仍然允许推广但不加分
+      if (!e.message?.includes('已达上限')) {
+        // 回滚推广记录
+        await pool.query('DELETE FROM topic_promotes WHERE id = ?', [promoteId])
+        throw e
+      }
+    }
+
+    // 8. 扣减奖励池
+    const poolUpdates = []
+    const poolValues = []
+    if (rewardPool > 0) {
+      const newPool = Math.max(0, rewardPool - promoteReward)
+      poolUpdates.push('reward_pool = ?')
+      poolValues.push(newPool)
+    }
+
+    // 9. 更新话题推广计数
+    poolUpdates.push('promote_count = ?')
+    poolValues.push(currentCount)
+    poolUpdates.push('participant_count = participant_count + 1')
+
+    // 10. 检查是否达到推广目标 → 自动结束
+    if (currentCount >= promoteTarget) {
+      poolUpdates.push('status = ?')
+      poolValues.push('completed')
+    }
+
+    // 检查奖励池是否耗尽 → 自动结束
+    const remainingPool = rewardPool > 0 ? Math.max(0, rewardPool - promoteReward) : 0
+    if (rewardPool > 0 && remainingPool <= 0) {
+      poolUpdates.push('status = ?')
+      poolValues.push('completed')
+    }
+
+    if (poolUpdates.length > 0) {
+      poolValues.push(topicId)
+      await pool.query(`UPDATE topics SET ${poolUpdates.join(', ')} WHERE id = ?`, poolValues)
+    }
+
+    // 11. 发送通知给话题创建者
+    try {
+      const [users] = await pool.query('SELECT name FROM users WHERE id = ?', [userId])
+      const userName = users[0]?.name || '有用户'
+      await pool.query(
+        'INSERT INTO notifications (id, user_id, type, title, content, related_id) VALUES (?, ?, ?, ?, ?, ?)',
+        [genId(), topic.created_by || topic.creator_id, 'promote', '新推广', `${userName} 推广了你的话题「${topic.title}」`, topicId]
+      )
+    } catch {}
+
+    // 返回结果
+    const [result] = await pool.query('SELECT * FROM topic_promotes WHERE id = ?', [promoteId])
+    res.json(result[0])
+  } catch (err) {
+    console.error('接受推广失败:', err)
+    res.status(500).json({ error: err.message || '接受推广失败' })
+  }
+})
+
+// 更新推广记录（补填地址、更新状态等）
+app.put('/api/topics/promotes/:id', authMiddleware, async (req, res) => {
+  try {
+    const fields = []
+    const values = []
+    const allowed = ['status', 'receiver_name', 'receiver_phone', 'receiver_address']
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) {
+        fields.push(`${key} = ?`)
+        values.push(req.body[key])
+      }
+    }
+    if (fields.length === 0) return res.status(400).json({ error: '没有要更新的字段' })
+    values.push(req.params.id, req.userId)
+    await pool.query(
+      `UPDATE topic_promotes SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`,
+      values
+    )
+    const [rows] = await pool.query('SELECT * FROM topic_promotes WHERE id = ?', [req.params.id])
+    res.json(rows[0] || {})
+  } catch (err) {
+    res.status(500).json({ error: '更新推广记录失败' })
+  }
+})
+
+// ============================================
+// 优惠券 API
+// ============================================
+
+// 领取话题优惠券
+app.post('/api/topics/:id/coupon', authMiddleware, async (req, res) => {
+  try {
+    const topicId = req.params.id
+    const userId = req.userId
+
+    // 获取话题
+    const [topics] = await pool.query('SELECT * FROM topics WHERE id = ?', [topicId])
+    if (topics.length === 0) return res.status(404).json({ error: '话题不存在' })
+    const topic = topics[0]
+
+    // 优惠券必须存在
+    if (!topic.coupon_type && !topic.coupon_value) {
+      return res.status(400).json({ error: '该话题没有优惠券奖励' })
+    }
+
+    // 检查数量
+    const couponCount = topic.coupon_count || 0
+    const claimed = topic.coupon_claimed || 0
+    if (couponCount > 0 && claimed >= couponCount) {
+      return res.status(400).json({ error: '优惠券已领完' })
+    }
+
+    // 检查是否已领过
+    const [existing] = await pool.query(
+      'SELECT id FROM user_coupons WHERE user_id = ? AND topic_id = ?',
+      [userId, topicId]
+    )
+    if (existing.length > 0) return res.status(400).json({ error: '已经领取过该优惠券' })
+
+    // 发放优惠券
+    const id = genId()
+    await pool.query(
+      'INSERT INTO user_coupons (id, user_id, topic_id, coupon_type, coupon_value, status) VALUES (?, ?, ?, ?, ?, ?)',
+      [id, userId, topicId, topic.coupon_type || '', topic.coupon_value || '', 'claimed']
+    )
+
+    // 更新领取计数
+    await pool.query('UPDATE topics SET coupon_claimed = COALESCE(coupon_claimed, 0) + 1 WHERE id = ?', [topicId])
+
+    // 通知
+    try {
+      await pool.query(
+        'INSERT INTO notifications (id, user_id, type, title, content, related_id) VALUES (?, ?, ?, ?, ?, ?)',
+        [genId(), userId, 'coupon', '优惠券到账', `你领取了「${topic.title}」的优惠券：${topic.coupon_value || topic.coupon_type}`, topicId]
+      )
+    } catch {}
+
+    const [rows] = await pool.query('SELECT * FROM user_coupons WHERE id = ?', [id])
+    res.json(rows[0])
+  } catch (err) {
+    res.status(500).json({ error: err.message || '领取优惠券失败' })
+  }
+})
+
+// 获取我的优惠券
+app.get('/api/coupons/my', authMiddleware, async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT uc.*, t.title as topic_title, t.brand_name FROM user_coupons uc LEFT JOIN topics t ON uc.topic_id = t.id WHERE uc.user_id = ? ORDER BY uc.claimed_at DESC',
+      [req.userId]
+    )
+    res.json(rows)
+  } catch (err) {
+    res.json([])
+  }
+})
+
+// ============================================
 // 投票创建 API
 // ============================================
 

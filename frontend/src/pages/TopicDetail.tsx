@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { getTopicById, getMemesByTopic, getComments, getUserById, checkInteraction, toggleLikeWithPoints, addCommentWithPoints, earnPoints, acceptTopicPromote, updateTopicPromote, claimTopicCoupon, updateTopic, getTopicPromotes, createMeme } from '../lib/api/client'
+import { getTopicById, getMemesByTopic, getComments, getUserById, checkInteraction, toggleLikeWithPoints, addCommentWithPoints, acceptTopicPromote, updateTopicPromote, claimTopicCoupon, getTopicPromotes, createMeme } from '../lib/api/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
 import { toast } from '../lib/toast'
 import MemeModal from '../components/MemeModal'
@@ -156,24 +156,9 @@ export default function TopicDetail({ user }: { user?: any }) {
 
       const data = await acceptTopicPromote(topic.id, insertData)
 
-      // 给积分（后端 acceptTopicPromote 可能已处理，这里兜底）
-      try {
-        await earnPoints(user.id, topic.promote_reward || 20, 'promote', `接受推广任务「${topic.title}」`)
-      } catch (e: any) {
-        if (!e.message?.includes('今日该类积分已达上限')) throw e
-      }
-
-      await updateTopic(topic.id, {
-        promote_count: (topic.promote_count || 0) + 1,
-        participant_count: (topic.participant_count || 0) + 1,
-      })
-
-      // 如果是优惠券奖励，自动发券
+      // 如果是优惠券奖励，自动发券（后端已处理计数更新）
       if (isCoupon && topic.coupon_type) {
-        try {
-          await claimTopicCoupon(topic.id)
-          await updateTopic(topic.id, { coupon_claimed: (topic.coupon_claimed || 0) + 1 })
-        } catch {}
+        try { await claimTopicCoupon(topic.id) } catch {}
       }
 
       setPromoted(true)
