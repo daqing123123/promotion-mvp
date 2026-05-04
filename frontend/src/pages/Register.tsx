@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { supabase } from '../lib/supabase/client'
+import { supabase, checkUsername } from '../lib/supabase/client'
 
 // 随机昵称（由数据库触发器生成）
 
@@ -32,8 +32,8 @@ export default function Register() {
     setChecking(true)
     const timer = setTimeout(async () => {
       try {
-        const { data } = await supabase.from('users').select('id').eq('username', username.toLowerCase()).maybeSingle()
-        setUsernameOk(!data)
+        const available = await checkUsername(username.toLowerCase())
+        setUsernameOk(available)
       } catch { setUsernameOk(null) }
       finally { setChecking(false) }
     }, 500)

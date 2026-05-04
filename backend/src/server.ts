@@ -119,6 +119,16 @@ app.get('/health', async (req, res) => {
 // ============================================
 // 认证 API
 // ============================================
+// 检查用户名是否可用
+app.get('/api/auth/check-username', async (req, res) => {
+  try {
+    const username = (req.query.username as string || '').toLowerCase().trim()
+    if (!username || username.length < 3) return res.json({ available: false, reason: 'too_short' })
+    const [rows] = await pool.query('SELECT id FROM users WHERE username = ?', [username]) as any[]
+    res.json({ available: rows.length === 0 })
+  } catch (err: any) { res.status(500).json({ error: err.message }) }
+})
+
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { username, password, name } = req.body

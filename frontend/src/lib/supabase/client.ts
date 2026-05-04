@@ -34,6 +34,11 @@ export async function signIn(username: string, password: string) {
   return { user: data.user, session: { access_token: data.token } }
 }
 
+export async function checkUsername(username: string) {
+  const data = await apiGet(`/api/auth/check-username?username=${encodeURIComponent(username)}`)
+  return data.available
+}
+
 export async function signOut() {
   localStorage.removeItem('token')
   localStorage.removeItem('user')
