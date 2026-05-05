@@ -1,6 +1,6 @@
 // @ts-nocheck
 // 巨浪 Julang - 前端 API 客户端
-// 替代 @supabase/supabase-js，调用自建后端 API
+// API 走 cloudflared HTTPS 隧道 → 腾讯云 81.70.71.132:3001
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://corporate-prints-anti-replacing.trycloudflare.com'
 
