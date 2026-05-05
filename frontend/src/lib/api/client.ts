@@ -63,6 +63,10 @@ export async function signOut() {
   localStorage.removeItem('julang_token')
 }
 
+export async function updatePassword(oldPassword, newPassword) {
+  return put('/api/auth/password', { oldPassword, newPassword })
+}
+
 export async function getCurrentUser() {
   try {
     return await get('/api/auth/me')
@@ -174,6 +178,11 @@ export async function getMemesByUser(userId, limit = 20, offset = 0) {
   return get('/api/memes', { user_id: userId, limit, offset })
 }
 
+export async function getMemeById(id) {
+  const results = await get('/api/memes', { id, limit: 1 })
+  return results && results.length > 0 ? results[0] : null
+}
+
 export async function createMeme(meme) {
   return post('/api/memes', meme)
 }
@@ -234,6 +243,25 @@ export async function getPointsBalance() {
   return data.points
 }
 
+export async function getTodayShareCount(userId) {
+  try {
+    const logs = await getPointsHistory(100)
+    const today = new Date().toISOString().split('T')[0]
+    return logs.filter((l) => l.type === 'share' && l.created_at?.startsWith(today)).length
+  } catch {
+    return 0
+  }
+}
+
+export async function getPointLogsCount(userId, type, date) {
+  try {
+    const logs = await getPointsHistory(100)
+    return logs.filter((l) => l.type === type && l.created_at?.startsWith(date)).length
+  } catch {
+    return 0
+  }
+}
+
 export async function earnPoints(userId, amount, type, description) {
   // 这个函数在后端处理，前端不需要直接调用
   // 保留接口兼容性
@@ -289,6 +317,15 @@ export async function getPromoteHistory(limit = 50) {
     return await get('/api/promotes/history', { limit })
   } catch {
     return []
+  }
+}
+
+export async function checkPromote(contentId) {
+  try {
+    const history = await getPromoteHistory(100)
+    return history.some((h) => h.content_id === contentId)
+  } catch {
+    return false
   }
 }
 

@@ -165,6 +165,29 @@ app.get('/api/auth/me', authMiddleware, async (req, res) => {
   }
 })
 
+// 修改密码
+app.put('/api/auth/password', authMiddleware, async (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({ error: '请输入旧密码和新密码' })
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ error: '新密码至少6位' })
+    }
+    const [users] = await pool.query('SELECT * FROM users WHERE id = ?', [req.userId])
+    if (users.length === 0) return res.status(404).json({ error: '用户不存在' })
+    const user = users[0]
+    if (user.password !== oldPassword) {
+      return res.status(400).json({ error: '旧密码错误' })
+    }
+    await pool.query('UPDATE users SET password = ? WHERE id = ?', [newPassword, req.userId])
+    res.json({ success: true, message: '密码修改成功' })
+  } catch (err) {
+    res.status(500).json({ error: '修改密码失败' })
+  }
+})
+
 // ============================================
 // 用户 API
 // ============================================
@@ -349,13 +372,14 @@ app.get('/api/topics/:id', async (req, res) => {
 
 app.get('/api/memes', async (req, res) => {
   try {
-    const { topic_id, user_id } = req.query
+    const { topic_id, user_id, id } = req.query
     const limit = parseInt(req.query.limit) || 20
     const offset = parseInt(req.query.offset) || 0
 
     let sql = 'SELECT * FROM memes WHERE status = ?'
     const params = ['published']
 
+    if (id) { sql += ' AND id = ?'; params.push(id) }
     if (topic_id) { sql += ' AND topic_id = ?'; params.push(topic_id) }
     if (user_id) { sql += ' AND creator_id = ?'; params.push(user_id) }
 
