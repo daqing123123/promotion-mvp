@@ -9,7 +9,7 @@ export default function ChatPage({ user }: { user: any }) {
   const [tab, setTab] = useState<'notifications' | 'chats'>('notifications')
   const [notifications, setNotifications] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [chatUnread, setChatUnread] = useState(2) // 模拟未读
+  const [chatUnread, setChatUnread] = useState(0)
 
   useEffect(() => {
     if (user) fetchNotifications()
@@ -53,8 +53,6 @@ export default function ChatPage({ user }: { user: any }) {
 
   const chats = [
     { id: '1', name: '系统通知', lastMsg: '欢迎加入巨浪！', time: '刚刚', avatar: '📢', unread: 0 },
-    { id: '2', name: '陈小雨', lastMsg: '你的梗太有意思了', time: '1小时前', avatar: '🌊', unread: 0 },
-    { id: '3', name: '造梗交流群', lastMsg: '有人看了新话题吗', time: '3小时前', avatar: '💡', unread: 0 },
   ]
 
   if (!user) {

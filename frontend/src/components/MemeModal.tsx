@@ -35,10 +35,10 @@ export default function MemeModal({ targetTitle, onClose, onSuccess }: MemeModal
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-end">
-      <div className="bg-white w-full max-h-[85vh] rounded-t-3xl flex flex-col animate-slide-up">
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-end" onClick={onClose}>
+      <div className="bg-white w-full max-h-[75vh] rounded-t-3xl flex flex-col" onClick={e => e.stopPropagation()}>
         {/* 头部 */}
-        <div className="flex items-center justify-between px-5 pt-5 pb-3">
+        <div className="flex items-center justify-between px-5 pt-5 pb-3 shrink-0">
           <div>
             <h2 className="text-lg font-bold text-gray-900">💡 造梗</h2>
             <p className="text-xs text-gray-400 mt-0.5">为「{targetTitle.length > 20 ? targetTitle.slice(0, 20) + '...' : targetTitle}」造一个梗</p>
@@ -113,7 +113,7 @@ export default function MemeModal({ targetTitle, onClose, onSuccess }: MemeModal
         </div>
 
         {/* 提交按钮 */}
-        <div className="sticky bottom-0 bg-white px-5 py-4 border-t border-gray-100">
+        <div className="bg-white px-5 py-4 border-t border-gray-100 shrink-0">
           <button
             onClick={handleSubmit}
             disabled={!canSubmit}

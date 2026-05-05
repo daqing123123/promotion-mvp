@@ -55,7 +55,7 @@ export default function Privacy() {
 
         <h3 className="text-sm font-bold text-gray-900 mt-6 mb-2">7. 联系我们</h3>
         <p className="text-sm text-gray-600 mb-4">
-          如有隐私相关问题，请联系：privacy@julang.app
+          如有隐私相关问题，请联系：a1478535213@163.com
         </p>
       </div>
     </div>

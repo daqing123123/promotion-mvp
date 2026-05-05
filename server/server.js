@@ -94,13 +94,12 @@ app.post('/api/auth/register', async (req, res) => {
 
     const id = genId()
     const passwordHash = await bcrypt.hash(password, 10)
-    const email = `${username}@julang.app`
     const avatar = '👤'
     const initialPoints = referrerId ? 150 : 100
 
     await pool.query(
-      'INSERT INTO users (id, username, name, avatar, email, password_hash, points, level, experience) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0)',
-      [id, username, name || username, avatar, email, passwordHash, initialPoints]
+      'INSERT INTO users (id, username, name, avatar, email, password_hash, points, level, experience) VALUES (?, ?, ?, ?, NULL, ?, ?, 1, 0)',
+      [id, username, name || username, avatar, passwordHash, initialPoints]
     )
 
     // 创建邀请人关系记录
@@ -417,6 +416,38 @@ app.post('/api/memes', authMiddleware, async (req, res) => {
 // 互动 API（点赞/收藏）
 // ============================================
 
+// 删除内容（仅作者本人）
+app.delete('/api/contents/:id', authMiddleware, async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT creator_id FROM contents WHERE id = ?', [req.params.id])
+    if (rows.length === 0) return res.status(404).json({ error: '内容不存在' })
+    if (rows[0].creator_id !== req.userId) return res.status(403).json({ error: '只能删除自己的内容' })
+    
+    await pool.query('DELETE FROM interactions WHERE target_type = ? AND target_id = ?', ['content', req.params.id])
+    await pool.query('DELETE FROM comments WHERE target_type = ? AND target_id = ?', ['content', req.params.id])
+    await pool.query('DELETE FROM contents WHERE id = ?', [req.params.id])
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ error: '删除失败' })
+  }
+})
+
+// 删除梗（仅作者本人）
+app.delete('/api/memes/:id', authMiddleware, async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT creator_id FROM memes WHERE id = ?', [req.params.id])
+    if (rows.length === 0) return res.status(404).json({ error: '梗不存在' })
+    if (rows[0].creator_id !== req.userId) return res.status(403).json({ error: '只能删除自己的梗' })
+    
+    await pool.query('DELETE FROM interactions WHERE target_type = ? AND target_id = ?', ['meme', req.params.id])
+    await pool.query('DELETE FROM comments WHERE target_type = ? AND target_id = ?', ['meme', req.params.id])
+    await pool.query('DELETE FROM memes WHERE id = ?', [req.params.id])
+    res.json({ success: true })
+  } catch (err) {
+    res.status(500).json({ error: '删除失败' })
+  }
+})
+
 app.post('/api/interactions/toggle', authMiddleware, async (req, res) => {
   try {
     const { target_type, target_id, action } = req.body
@@ -430,9 +461,13 @@ app.post('/api/interactions/toggle', authMiddleware, async (req, res) => {
     const countField = action === 'like' ? 'like_count' : 'favorite_count'
 
     if (existing.length > 0) {
-      // 取消
+      // 取消互动
       await pool.query('DELETE FROM interactions WHERE id = ?', [existing[0].id])
       await pool.query(`UPDATE ${table} SET ${countField} = GREATEST(0, ${countField} - 1) WHERE id = ?`, [target_id])
+      // 取消点赞扣回积分
+      if (action === 'like') {
+        try { await earnPoints(req.userId, -5, 'like_cancel', '取消点赞') } catch {}
+      }
       res.json({ toggled: false })
     } else {
       // 添加

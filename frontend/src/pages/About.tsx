@@ -51,9 +51,7 @@ export default function About() {
         <div className="bg-gray-50 rounded-2xl p-5 mb-6">
           <h3 className="text-sm font-bold text-gray-900 mb-3">📧 联系我们</h3>
           <div className="space-y-2 text-sm text-gray-600">
-            <p>客服邮箱：support@julang.app</p>
-            <p>商务合作：biz@julang.app</p>
-            <p>意见反馈：feedback@julang.app</p>
+            <p>联系邮箱：a1478535213@163.com</p>
           </div>
         </div>
 

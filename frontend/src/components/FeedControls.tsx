@@ -67,7 +67,7 @@ export default function FeedControls({ content, user, onMeme, onModalToggle }: {
     if (!user?.id) { toast.warning('请先登录'); return }
     const prev = favorited
     setFavorited(!prev)
-    setFavCount(c => c + (prev ? -1 : 1))
+    setFavCount(c => Math.max(0, c + (prev ? -1 : 1)))
     try {
       await toggleFavorite(targetType, content.id)
     } catch {

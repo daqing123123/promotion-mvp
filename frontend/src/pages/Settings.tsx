@@ -81,7 +81,7 @@ export default function Settings({ user, setUser }: { user: any; setUser: (u: an
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-500">邮箱</span>
-              <span className="text-sm text-gray-900">{user?.username}@julang.app</span>
+              <span className="text-sm text-gray-900">{user?.email || '未绑定'}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-gray-500">注册时间</span>

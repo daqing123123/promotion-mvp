@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { getContentById, getMemeById, getComments, getUserById, toggleLikeWithPoints, toggleFavorite, promoteContent, addCommentWithPoints, toggleFollow, isFollowing, createNotification, checkInteraction, checkPromote } from '../lib/api/client'
+import { getContentById, getMemeById, getComments, getUserById, toggleLikeWithPoints, toggleFavorite, promoteContent, addCommentWithPoints, toggleFollow, isFollowing, createNotification, checkInteraction, checkPromote, deleteContent, deleteMeme } from '../lib/api/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
 import { toast } from '../lib/toast'
 
@@ -206,8 +206,19 @@ export default function ContentDetail({ user }: { user?: any }) {
         </div>
       </div>
 
-      {/* 举报 */}
-      <div className="mx-5 mt-2 flex justify-end">
+      {/* 举报 & 删除 */}
+      <div className="mx-5 mt-2 flex justify-end gap-4">
+        {user?.id && content.creator_id === user.id && (
+          <button onClick={async () => {
+            if (!confirm('确定要删除吗？删了就没了。')) return
+            try {
+              if (isMeme) await deleteMeme(content.id)
+              else await deleteContent(content.id)
+              toast.success('已删除')
+              navigate(-1)
+            } catch (e: any) { toast.error(e.message || '删除失败') }
+          }} className="text-xs text-red-400 underline">删除</button>
+        )}
         <button onClick={() => {
           if (!user?.id) { toast.warning('请先登录'); return }
           toast.info('举报已提交，我们会尽快处理')

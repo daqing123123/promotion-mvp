@@ -40,6 +40,10 @@ function put(path, body) {
   return request(path, { method: 'PUT', body: JSON.stringify(body) })
 }
 
+function del(path) {
+  return request(path, { method: 'DELETE' })
+}
+
 // ============================================
 // 认证
 // ============================================
@@ -112,6 +116,16 @@ export async function getContentById(id) {
 
 export async function createContent(content) {
   return post('/api/contents', content)
+}
+
+// 删除自己的内容
+export async function deleteContent(id) {
+  return del(`/api/contents/${id}`)
+}
+
+// 删除自己的梗
+export async function deleteMeme(id) {
+  return del(`/api/memes/${id}`)
 }
 
 // ============================================
@@ -215,7 +229,8 @@ export async function toggleLikeWithPoints(targetType, targetId) {
 }
 
 export async function checkInteraction(targetType, targetId, action) {
-  return get('/api/interactions/check', { target_type: targetType, target_id: targetId, action })
+  const data = await get('/api/interactions/check', { target_type: targetType, target_id: targetId, action })
+  return data?.exists === true
 }
 
 // ============================================
