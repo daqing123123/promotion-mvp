@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { type Content } from '../lib/contentData'
 import { formatStat } from '../lib/memeSystem'
-import { checkInteraction, toggleLikeWithPoints, toggleFavorite, promoteContent, earnPoints } from '../lib/api/client'
+import { checkInteraction, toggleLikeWithPoints, toggleFavorite, promoteContent, shareContent } from '../lib/api/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
 import { toast } from '../lib/toast'
 import CommentSheet from './CommentSheet'
@@ -105,16 +105,12 @@ export default function FeedControls({ content, user, onMeme, onModalToggle }: {
         await navigator.clipboard.writeText(url)
         toast.success('链接已复制 ✓')
       }
-      // 分享给积分
+      // 分享计数+积分（后端统一处理）
       if (user?.id) {
         try {
-          await earnPoints(user.id, 3, 'share', '分享内容')
-          toast.points(3)
+          const shareResult = await shareContent(content.id)
+          if (shareResult.reward) toast.points(shareResult.reward)
         } catch {}
-      }
-      // 更新分享数
-      if (user?.id) {
-        try { await earnPoints(user.id, 3, 'share', '分享内容'); toast.points(3) } catch {}
       }
     } catch {}
   }

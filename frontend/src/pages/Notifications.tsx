@@ -1,4 +1,4 @@
-﻿// ===== 閫氱煡鍒楄〃 =====
+// ===== 通知列表 =====
 
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -16,14 +16,14 @@ interface Notification {
 }
 
 const ICON_MAP: Record<string, string> = {
-  like: '鉂わ笍',
-  comment: '馃挰',
-  follow: '馃懁',
-  promote: '馃敟',
-  achievement: '馃弳',
-  system: '馃摙',
-  invite: '馃巵',
-  points: '馃挵',
+  like: '❤️',
+  comment: '💬',
+  follow: '👤',
+  promote: '🔥',
+  achievement: '🏆',
+  system: '📢',
+  invite: '🎁',
+  points: '💰',
 }
 
 export default function Notifications({ user }: { user: any }) {
@@ -40,10 +40,11 @@ export default function Notifications({ user }: { user: any }) {
     setLoading(true)
     try {
       const data = await getNotifications()
+        .limit(50)
 
-      if (data) {
+      if (!error && data) {
         setNotifications(data)
-        // 鏍囪鎵€鏈変负宸茶
+        // 标记所有为已读
         await markAllNotificationsRead()
       }
     } catch {}
@@ -64,23 +65,23 @@ export default function Notifications({ user }: { user: any }) {
     <div className="bg-gray-50 min-h-screen pb-20">
       <div className="bg-white px-5 pt-12 pb-4 border-b border-gray-100">
         <div className="flex items-center justify-between">
-          <button onClick={() => navigate(-1)} className="text-gray-400">鈫?杩斿洖</button>
-          <h1 className="text-base font-bold text-gray-900">閫氱煡</h1>
+          <button onClick={() => navigate(-1)} className="text-gray-400">← 返回</button>
+          <h1 className="text-base font-bold text-gray-900">通知</h1>
           <button onClick={() => {
             setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
-            toast.success('宸插叏閮ㄦ爣涓哄凡璇?)
-          }} className="text-xs text-blue-500">鍏ㄩ儴宸茶</button>
+            toast.success('已全部标为已读')
+          }} className="text-xs text-blue-500">全部已读</button>
         </div>
       </div>
 
       <div className="p-5">
         {loading ? (
-          <div className="text-center py-10 text-gray-400">鍔犺浇涓?..</div>
+          <div className="text-center py-10 text-gray-400">加载中...</div>
         ) : notifications.length === 0 ? (
           <div className="text-center py-16">
-            <div className="text-5xl mb-4">馃敂</div>
-            <p className="text-gray-400">鏆傛棤閫氱煡</p>
-            <p className="text-xs text-gray-300 mt-1">鐐硅禐銆佽瘎璁恒€佸叧娉ㄧ瓑娑堟伅浼氬嚭鐜板湪杩欓噷</p>
+            <div className="text-5xl mb-4">🔔</div>
+            <p className="text-gray-400">暂无通知</p>
+            <p className="text-xs text-gray-300 mt-1">点赞、评论、关注等消息会出现在这里</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -91,7 +92,7 @@ export default function Notifications({ user }: { user: any }) {
                 className={`bg-white rounded-xl p-4 border border-gray-100 ${!n.is_read ? 'border-l-4 border-l-blue-500' : ''}`}
               >
                 <div className="flex items-start gap-3">
-                  <span className="text-xl mt-0.5">{ICON_MAP[n.type] || '馃摙'}</span>
+                  <span className="text-xl mt-0.5">{ICON_MAP[n.type] || '📢'}</span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-0.5">
                       <span className="text-sm font-bold text-gray-900">{n.title}</span>
@@ -109,4 +110,3 @@ export default function Notifications({ user }: { user: any }) {
     </div>
   )
 }
-
