@@ -9,6 +9,7 @@ import Topics from './pages/Topics'
 import ChatPage from './pages/ChatPage'
 import Profile from './pages/Profile'
 import Search from './pages/Search'
+import Brands from './pages/Brands'
 
 // 低频页面懒加载
 const Promote = lazy(() => import('./pages/Promote'))
@@ -27,6 +28,7 @@ const PointsCenter = lazy(() => import('./pages/PointsCenter'))
 const EditProfile = lazy(() => import('./pages/EditProfile'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Notifications = lazy(() => import('./pages/Notifications'))
+const PromoterBattle = lazy(() => import('./pages/PromoterBattle'))
 const About = lazy(() => import('./pages/About'))
 const Terms = lazy(() => import('./pages/Terms'))
 const Privacy = lazy(() => import('./pages/Privacy'))
@@ -119,7 +121,8 @@ function AppLayout() {
             <Route path="/invite" element={user ? <Invite user={user} /> : <Login setUser={setUser} />} />
             <Route path="/points-center" element={user ? <PointsCenter user={user} /> : <Login setUser={setUser} />} />
             <Route path="/edit-profile" element={user ? <EditProfile user={user} setUser={setUser} /> : <Login setUser={setUser} />} />
-            <Route path="/settings" element={user ? <Settings user={user} setUser={setUser} /> : <Login setUser={setUser} />} />
+            <Route path="/brand" element={<Brands />} />
+            <Route path="/promoter-stats" element={user ? <PromoterBattle user={user} /> : <Login setUser={setUser} />} />
             <Route path="/notifications" element={user ? <Notifications user={user} /> : <Login setUser={setUser} />} />
             <Route path="/about" element={<About />} />
             <Route path="/terms" element={<Terms />} />

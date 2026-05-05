@@ -524,6 +524,52 @@ export async function shareTopic(topicId) {
 }
 
 // ============================================
+// 推广者战绩
+// ============================================
+
+export async function getPromoterStats() {
+  return get('/api/promoter/stats')
+}
+
+// ============================================
+// 品牌中心
+// ============================================
+
+export async function getBrandTopics() {
+  return get('/api/brand/topics')
+}
+
+export async function getBrands() {
+  try { return await get('/api/brands') }
+  catch { return [] }
+}
+
+export async function getTopicPromotesDetail(topicId: string) {
+  try { return await get(`/api/topics/${topicId}/promotes/detail`) }
+  catch { return [] }
+}
+
+// ============================================
+// 积分消费
+// ============================================
+
+export async function boostContent(id: string) {
+  return post(`/api/contents/${id}/boost`)
+}
+
+export async function pinContent(id: string) {
+  return post(`/api/contents/${id}/pin`)
+}
+
+// ============================================
+// 举报
+// ============================================
+
+export async function submitReport(targetType: string, targetId: string, reason: string) {
+  return post('/api/reports', { target_type: targetType, target_id: targetId, reason })
+}
+
+// ============================================
 // 导出（兼容旧接口名）
 // ============================================
 

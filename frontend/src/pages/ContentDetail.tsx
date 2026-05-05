@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { getContentById, getMemeById, getComments, getUserById, toggleLikeWithPoints, toggleFavorite, promoteContent, addCommentWithPoints, toggleFollow, isFollowing, createNotification, checkInteraction, checkPromote, deleteContent, deleteMeme } from '../lib/api/client'
+import { getContentById, getMemeById, getComments, getUserById, toggleLikeWithPoints, toggleFavorite, promoteContent, addCommentWithPoints, toggleFollow, isFollowing, createNotification, checkInteraction, checkPromote, deleteContent, deleteMeme, submitReport, boostContent, pinContent } from '../lib/api/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
 import { toast } from '../lib/toast'
 
@@ -219,11 +219,38 @@ export default function ContentDetail({ user }: { user?: any }) {
             } catch (e: any) { toast.error(e.message || '删除失败') }
           }} className="text-xs text-red-400 underline">删除</button>
         )}
-        <button onClick={() => {
+        <button onClick={async () => {
           if (!user?.id) { toast.warning('请先登录'); return }
-          toast.info('举报已提交，我们会尽快处理')
+          const reason = prompt('请说明举报原因（色情、暴力、诈骗、侵权、其他）：')
+          if (!reason) return
+          try {
+            await submitReport(isMeme ? 'meme' : 'content', content.id, reason)
+            toast.success('举报已提交，我们会尽快处理')
+          } catch (e: any) { toast.error(e.message || '举报失败') }
         }} className="text-xs text-gray-400 underline">举报内容</button>
       </div>
+
+      {/* 内容所有者操作：曝光加速 + 置顶 */}
+      {user?.id && (content.creator_id === user.id || content.created_by === user.id) && (
+        <div className="mx-5 mt-3 flex gap-2">
+          <button onClick={async () => {
+            try {
+              await boostContent(content.id)
+              toast.success('曝光加速成功！24小时内优先展示')
+            } catch (e: any) { toast.error(e.message || '加速失败') }
+          }} className="flex-1 py-2.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl text-xs font-bold">
+            🚀 曝光加速 (-50分)
+          </button>
+          <button onClick={async () => {
+            try {
+              await pinContent(content.id)
+              toast.success('置顶成功！24小时内优先展示')
+            } catch (e: any) { toast.error(e.message || '置顶失败') }
+          }} className="flex-1 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl text-xs font-bold">
+            📌 置顶 (-150分)
+          </button>
+        </div>
+      )}
 
       {/* 帮推按钮 */}
       {!promoted && (

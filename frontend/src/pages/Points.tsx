@@ -1,6 +1,7 @@
 // ===== 积分中心（真实数据版） =====
 
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { getPointsHistory, getPointsBalance } from '../lib/api/client'
 import { getLevelTitle, getLevelBadge, getLevelColor } from '../lib/rewardSystem'
 
@@ -49,12 +50,10 @@ export default function Points({ user }: PointsProps) {
   ]
 
   const spendRules = [
-    { id: '1', action: '投票', points: '按投票', icon: '🗳️', desc: '参与投票消耗积分' },
-    { id: '2', action: '发起小浪', points: '100', icon: '🌊', desc: '基础推广' },
-    { id: '3', action: '发起中浪', points: '300', icon: '🌊', desc: '中等推广' },
-    { id: '4', action: '发起巨浪', points: '800', icon: '🌊', desc: '大规模推广' },
-    { id: '5', action: '曝光加速', points: '50', icon: '🚀', desc: '24h曝光翻倍' },
-    { id: '6', action: '置顶', points: '150', icon: '📌', desc: '置顶24小时' },
+    { id: '1', action: '曝光加速', points: '50', icon: '🚀', desc: '24小时曝光翻倍', enabled: true, nav: '/profile' },
+    { id: '2', action: '内容置顶', points: '150', icon: '📌', desc: '置顶24小时', enabled: true, nav: '/profile' },
+    { id: '3', action: '投票', points: '按投票', icon: '🗳️', desc: '参与投票消耗积分', enabled: true, nav: '/topics' },
+    { id: '4', action: '发布话题', points: '自定', icon: '🌊', desc: '设置奖励池吸引推广', enabled: true, nav: '/publish' },
   ]
 
   // 计算本周统计
@@ -148,7 +147,11 @@ export default function Points({ user }: PointsProps) {
               <p className="text-white/60 text-sm">积分可用于推广、投票、置顶等</p>
             </div>
             {spendRules.map(rule => (
-              <div key={rule.id} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl opacity-60">
+              <div
+                key={rule.id}
+                onClick={() => rule.nav && navigate(rule.nav)}
+                className={`flex items-center gap-3 p-3 rounded-xl ${rule.enabled ? 'bg-green-500/10 border border-green-500/20 cursor-pointer hover:bg-green-500/20' : 'bg-white/5 opacity-60'}`}
+              >
                 <span className="text-2xl">{rule.icon}</span>
                 <div className="flex-1">
                   <div className="font-medium text-white text-sm">{rule.action}</div>
@@ -156,7 +159,11 @@ export default function Points({ user }: PointsProps) {
                 </div>
                 <div className="text-right">
                   <span className="text-red-400 font-bold">{rule.points}</span>
-                  <div className="text-[10px] text-white/30 mt-0.5">即将上线</div>
+                  {rule.enabled ? (
+                    <div className="text-[10px] text-green-400 mt-0.5">去使用 →</div>
+                  ) : (
+                    <div className="text-[10px] text-white/30 mt-0.5">即将上线</div>
+                  )}
                 </div>
               </div>
             ))}

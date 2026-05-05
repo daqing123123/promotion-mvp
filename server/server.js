@@ -647,6 +647,28 @@ async function earnPoints(userId, amount, type, description) {
   return { points: finalPoints, level: newLevel, experience: newExp, levelUpBonus, oldLevel, newLevel }
 }
 
+
+// 积分消费（扣积分 + 记录日志）
+async function spendPoints(userId, amount, type, description) {
+  if (amount <= 0) throw new Error('消费金额必须为正数')
+  
+  const [users] = await pool.query('SELECT points, level, experience FROM users WHERE id = ?', [userId])
+  if (users.length === 0) throw new Error('用户不存在')
+  
+  const currentPoints = users[0].points || 0
+  if (currentPoints < amount) throw new Error('积分不足')
+  
+  const newPoints = currentPoints - amount
+  await pool.query('UPDATE users SET points = ? WHERE id = ?', [newPoints, userId])
+  
+  await pool.query(
+    'INSERT INTO point_logs (id, user_id, amount, type, description) VALUES (?, ?, ?, ?, ?)',
+    [genId(), userId, -amount, type, description]
+  )
+  
+  return { points: newPoints, spent: amount }
+}
+
 // 积分相关 API
 app.get('/api/points/history', authMiddleware, async (req, res) => {
   try {
@@ -1621,6 +1643,247 @@ app.get('/api/promotes/history', authMiddleware, async (req, res) => {
     res.json(rows)
   } catch (err) {
     res.status(500).json({ error: '获取帮推历史失败' })
+  }
+})
+
+
+// ============================================
+// 推广者战绩 API
+// ============================================
+
+app.get('/api/promoter/stats', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.userId
+    
+    // 话题推广统计
+    const [tpStats] = await pool.query(
+      'SELECT COUNT(*) as total_promotes, COALESCE(SUM(points_earned), 0) as total_earned FROM topic_promotes WHERE user_id = ?',
+      [userId]
+    )
+    
+    // 内容帮推统计
+    const [pStats] = await pool.query(
+      'SELECT COUNT(*) as total_promotes, COALESCE(SUM(earned_points), 0) as total_earned FROM promotes WHERE user_id = ?',
+      [userId]
+    )
+    
+    // 话题推广历史（含话题信息）
+    const [topicHistory] = await pool.query(
+      `SELECT tp.*, t.title as topic_title, t.brand_name, t.reward_type
+       FROM topic_promotes tp
+       LEFT JOIN topics t ON tp.topic_id = t.id
+       WHERE tp.user_id = ?
+       ORDER BY tp.created_at DESC LIMIT 50`,
+      [userId]
+    )
+    
+    // 内容帮推历史
+    const [contentHistory] = await pool.query(
+      `SELECT p.*, c.title as content_title, c.type as content_type
+       FROM promotes p
+       LEFT JOIN contents c ON p.content_id = c.id
+       WHERE p.user_id = ?
+       ORDER BY p.created_at DESC LIMIT 50`,
+      [userId]
+    )
+    
+    // 推广排名
+    const [rank] = await pool.query(
+      `SELECT COUNT(DISTINCT user_id) as rank FROM topic_promotes 
+       GROUP BY user_id HAVING COUNT(*) > (
+         SELECT COUNT(*) FROM topic_promotes WHERE user_id = ?
+       )`,
+      [userId, userId]
+    )
+    
+    const totalPromotes = (tpStats[0].total_promotes || 0) + (pStats[0].total_promotes || 0)
+    const totalEarned = (tpStats[0].total_earned || 0) + (pStats[0].total_earned || 0)
+    
+    res.json({
+      topic_promotes: { total: tpStats[0].total_promotes || 0, earned: tpStats[0].total_earned || 0 },
+      content_promotes: { total: pStats[0].total_promotes || 0, earned: pStats[0].total_earned || 0 },
+      total_promotes: totalPromotes,
+      total_earned: totalEarned,
+      topic_history: topicHistory,
+      content_history: contentHistory,
+      rank: rank.length > 0 ? rank[0].rank + 1 : 1,
+    })
+  } catch (err) {
+    res.status(500).json({ error: '获取战绩失败' })
+  }
+})
+
+// ============================================
+// 品牌中心 API
+// ============================================
+
+// 品牌方获取自己发布的话题列表（含推广统计）
+app.get('/api/brand/topics', authMiddleware, async (req, res) => {
+  try {
+    const userId = req.userId
+    const [topics] = await pool.query(
+      'SELECT * FROM topics WHERE created_by = ? OR creator_id = ? ORDER BY created_at DESC',
+      [userId, userId]
+    )
+    
+    // 为每个话题补充推广统计
+    for (const topic of topics) {
+      const [stats] = await pool.query(
+        'SELECT COUNT(*) as total_promotes, COALESCE(SUM(points_earned), 0) as total_earned FROM topic_promotes WHERE topic_id = ?',
+        [topic.id]
+      )
+      topic.promote_stats = stats[0]
+    }
+    
+    res.json(topics)
+  } catch (err) {
+    res.status(500).json({ error: '获取品牌话题失败' })
+  }
+})
+
+// 获取话题推广明细（含推广者信息）
+app.get('/api/topics/:id/promotes/detail', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      `SELECT tp.*, u.name as user_name, u.avatar as user_avatar, u.level as user_level
+       FROM topic_promotes tp
+       LEFT JOIN users u ON tp.user_id = u.id
+       WHERE tp.topic_id = ?
+       ORDER BY tp.created_at DESC`,
+      [req.params.id]
+    )
+    res.json(rows)
+  } catch (err) {
+    res.json([])
+  }
+})
+
+// 品牌列表（所有品牌方话题发布者）
+app.get('/api/brands', async (req, res) => {
+  try {
+    const [brands] = await pool.query(
+      `SELECT t.created_by as id, t.brand_name as name, t.brand_logo as logo, 
+              t.brand_description as description,
+              COUNT(*) as topic_count, 
+              COALESCE(SUM(t.promote_count), 0) as total_promotes,
+              COALESCE(SUM(t.participant_count), 0) as total_participants,
+              MAX(t.created_at) as latest_activity
+       FROM topics t
+       WHERE t.creator_type = 'brand' AND t.brand_name IS NOT NULL AND t.brand_name != ''
+       GROUP BY t.created_by, t.brand_name, t.brand_logo, t.brand_description
+       ORDER BY topic_count DESC LIMIT 50`
+    )
+    res.json(brands)
+  } catch (err) {
+    res.json([])
+  }
+})
+
+// ============================================
+// 积分消费 API
+// ============================================
+
+// 内容曝光加速（50积分）
+app.post('/api/contents/:id/boost', authMiddleware, async (req, res) => {
+  try {
+    const contentId = req.params.id
+    const userId = req.userId
+    
+    // 检查归属
+    const [contents] = await pool.query('SELECT * FROM contents WHERE id = ?', [contentId])
+    if (contents.length === 0) return res.status(404).json({ error: '内容不存在' })
+    
+    // 检查是否已加速
+    const content = contents[0]
+    if (content.boost_until && new Date(content.boost_until) > new Date()) {
+      return res.status(400).json({ error: '该内容仍在加速中' })
+    }
+    
+    // 扣积分
+    const COST = 50
+    await spendPoints(userId, COST, 'boost', '曝光加速')
+    
+    // 标记加速
+    const boostUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ')
+    await pool.query(
+      'UPDATE contents SET boost_until = ?, total_views = total_views + 200 WHERE id = ?',
+      [boostUntil, contentId]
+    )
+    
+    res.json({ success: true, boost_until: boostUntil, message: '曝光加速成功！24小时内优先展示' })
+  } catch (err) {
+    res.status(400).json({ error: err.message || '曝光加速失败' })
+  }
+})
+
+// 内容/话题置顶（150积分）
+app.post('/api/contents/:id/pin', authMiddleware, async (req, res) => {
+  try {
+    const contentId = req.params.id
+    const userId = req.userId
+    
+    // 检查归属
+    const [contents] = await pool.query('SELECT * FROM contents WHERE id = ?', [contentId])
+    if (contents.length === 0) return res.status(404).json({ error: '内容不存在' })
+    
+    // 同时置顶数限制
+    const [pinned] = await pool.query(
+      "SELECT COUNT(*) as count FROM contents WHERE (pinned_by = ? OR created_by = ?) AND pinned_until > NOW()",
+      [userId, userId]
+    )
+    if (pinned[0].count >= 3) return res.status(400).json({ error: '最多同时置顶3条内容' })
+    
+    // 检查是否已置顶
+    const content = contents[0]
+    if (content.pinned_until && new Date(content.pinned_until) > new Date()) {
+      return res.status(400).json({ error: '该内容已置顶' })
+    }
+    
+    // 扣积分
+    const COST = 150
+    await spendPoints(userId, COST, 'pin', '内容置顶')
+    
+    // 标记置顶
+    const pinUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ')
+    await pool.query(
+      'UPDATE contents SET pinned_until = ?, pinned_by = ? WHERE id = ?',
+      [pinUntil, userId, contentId]
+    )
+    
+    res.json({ success: true, pin_until: pinUntil, message: '置顶成功！24小时内优先展示' })
+  } catch (err) {
+    res.status(400).json({ error: err.message || '置顶失败' })
+  }
+})
+
+// ============================================
+// 举报 API
+// ============================================
+
+app.post('/api/reports', authMiddleware, async (req, res) => {
+  try {
+    const { target_type, target_id, reason } = req.body
+    if (!target_type || !target_id || !reason) {
+      return res.status(400).json({ error: '请填写完整信息' })
+    }
+    
+    // 检查是否重复举报
+    const [existing] = await pool.query(
+      'SELECT id FROM reports WHERE reporter_id = ? AND target_type = ? AND target_id = ? AND status = "pending"',
+      [req.userId, target_type, target_id]
+    )
+    if (existing.length > 0) {
+      return res.status(400).json({ error: '你已经举报过该内容了' })
+    }
+    
+    await pool.query(
+      'INSERT INTO reports (id, reporter_id, target_type, target_id, reason, status) VALUES (?, ?, ?, ?, ?, ?)',
+      [genId(), req.userId, target_type, target_id, reason, 'pending']
+    )
+    
+    res.json({ success: true, message: '举报已提交，我们会尽快处理' })
+  } catch (err) {
+    res.status(500).json({ error: '举报提交失败' })
   }
 })
 

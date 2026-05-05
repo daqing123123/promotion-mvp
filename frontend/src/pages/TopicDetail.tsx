@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { getTopicById, getMemesByTopic, getComments, getUserById, checkInteraction, toggleLikeWithPoints, addCommentWithPoints, acceptTopicPromote, updateTopicPromote, claimTopicCoupon, getTopicPromotes, createMeme } from '../lib/api/client'
+import { getTopicById, getMemesByTopic, getComments, getUserById, checkInteraction, toggleLikeWithPoints, addCommentWithPoints, acceptTopicPromote, updateTopicPromote, claimTopicCoupon, getTopicPromotes, getTopicPromotesDetail, createMeme } from '../lib/api/client'
 import { checkAndUnlockAchievements } from '../lib/achievements'
 import { toast } from '../lib/toast'
 import MemeModal from '../components/MemeModal'
@@ -26,6 +26,8 @@ export default function TopicDetail({ user }: { user?: any }) {
   const [showAddressForm, setShowAddressForm] = useState(false)
   const [address, setAddress] = useState({ name: '', phone: '', address: '' })
   const [submittingAddress, setSubmittingAddress] = useState(false)
+  const [promoteDetail, setPromoteDetail] = useState<any[]>([])
+  const [showPromoteDetail, setShowPromoteDetail] = useState(false)
 
   useEffect(() => {
     if (id) fetchTopic(id)
@@ -69,6 +71,7 @@ export default function TopicDetail({ user }: { user?: any }) {
         })
 
         // 当前用户状态
+        const isOwner = user?.id && (t.created_by === user.id || t.creator_id === user.id)
         if (user?.id) {
           const likedData = await checkInteraction('topic', topicId, 'like').catch(() => null)
           if (likedData?.exists) setLiked(true)
@@ -77,6 +80,12 @@ export default function TopicDetail({ user }: { user?: any }) {
           if (myP) {
             setPromoted(true)
             setMyPromote(myP)
+          }
+          
+          // 品牌方：加载推广明细
+          if (isOwner) {
+            const detail = await getTopicPromotesDetail(topicId).catch(() => [] as any[])
+            setPromoteDetail(detail || [])
           }
         }
       }
@@ -463,6 +472,70 @@ export default function TopicDetail({ user }: { user?: any }) {
               </button>
             )}
           </div>
+        </div>
+      )}
+
+      {/* 品牌方：推广明细 */}
+      {isBrand && (topic.created_by === user?.id || topic.creator_id === user?.id) && (
+        <div className="mx-5 mt-4 bg-white rounded-2xl border border-green-100 overflow-hidden">
+          <button
+            onClick={() => setShowPromoteDetail(!showPromoteDetail)}
+            className="w-full p-4 flex items-center justify-between"
+          >
+            <div className="flex items-center gap-2">
+              <span className="text-lg">📊</span>
+              <h3 className="text-sm font-bold text-gray-900">推广明细</h3>
+              {promoteDetail.length > 0 && (
+                <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded-full text-xs font-medium">
+                  {promoteDetail.length}人
+                </span>
+              )}
+            </div>
+            <span className="text-gray-400 text-sm">{showPromoteDetail ? '收起 ▲' : '展开 ▼'}</span>
+          </button>
+          {showPromoteDetail && (
+            <div className="px-4 pb-4 space-y-2 max-h-80 overflow-y-auto">
+              {promoteDetail.length === 0 ? (
+                <div className="text-center py-6 text-gray-400 text-sm">还没有人推广你的话题，快去分享吧！</div>
+              ) : (
+                promoteDetail.map((p: any) => (
+                  <div key={p.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-base"
+                      style={{ background: `hsl(${(p.user_name || '').length * 40}, 40%, 90%)` }}>
+                      {p.user_avatar || '👤'}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-gray-900 truncate">{p.user_name || '匿名用户'}</div>
+                      <div className="text-xs text-gray-400">Lv.{p.user_level || 1} · {new Date(p.created_at).toLocaleDateString('zh-CN')}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-bold text-green-600">+{p.points_earned || 0}分</div>
+                      <div className="text-xs text-gray-400">
+                        {p.status === 'accepted' && '已接受'}
+                        {p.status === 'shared' && '已分享'}
+                        {p.status === 'address_submitted' && '待发货'}
+                        {p.status === 'shipped' && '已发货'}
+                        {p.status === 'completed' && '已完成'}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+              {/* 总结 */}
+              {promoteDetail.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-gray-100 grid grid-cols-2 gap-2 text-center">
+                  <div className="bg-green-50 rounded-xl py-2">
+                    <div className="text-lg font-bold text-green-700">{promoteDetail.length}</div>
+                    <div className="text-[10px] text-green-500">推广人数</div>
+                  </div>
+                  <div className="bg-blue-50 rounded-xl py-2">
+                    <div className="text-lg font-bold text-blue-700">{promoteDetail.reduce((s: number, p: any) => s + (p.points_earned || 0), 0)}</div>
+                    <div className="text-[10px] text-blue-500">发放积分</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

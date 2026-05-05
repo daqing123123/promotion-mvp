@@ -251,6 +251,14 @@ export default function Profile({ user, setUser: _setUser }: { user: any; setUse
             <div className="text-xl mb-1">🏆</div>
             <div className="text-[10px] text-gray-600">成就</div>
           </button>
+          <button onClick={() => navigate('/promoter-stats')} className="bg-white rounded-xl p-3 text-center border border-gray-100">
+            <div className="text-xl mb-1">📊</div>
+            <div className="text-[10px] text-gray-600">推广战绩</div>
+          </button>
+          <button onClick={() => navigate('/brand')} className="bg-white rounded-xl p-3 text-center border border-gray-100">
+            <div className="text-xl mb-1">🏢</div>
+            <div className="text-[10px] text-gray-600">品牌中心</div>
+          </button>
         </div>
       )}
 
