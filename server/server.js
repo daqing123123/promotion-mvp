@@ -1889,6 +1889,264 @@ app.post('/api/reports', authMiddleware, async (req, res) => {
 
 // ============================================
 // 启动服务器
+
+// =====================================================
+// 每日挑战 + 排行榜 + PK对战
+// =====================================================
+
+// ====== 每日造梗挑战 ======
+
+app.get('/api/challenges/today', optionalAuth, async (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0]
+    let [challenges] = await pool.query(
+      'SELECT * FROM daily_challenges WHERE date = ? AND status = ?',
+      [today, 'active']
+    )
+    if (challenges.length === 0) {
+      const topics = [
+        { title: '上班摸鱼瞬间', desc: '最离谱的摸鱼经历', tag: '职场' },
+        { title: '当代年轻人迷惑行为', desc: '你见过最迷惑的操作', tag: '搞笑' },
+        { title: '如果AI统治世界', desc: '脑洞大开的AI末日场景', tag: 'AI' },
+        { title: '20年前的自己', desc: '如果能穿越回到20年前说什么', tag: '怀旧' },
+        { title: '减肥失败理由', desc: '最离谱的减肥失败借口', tag: '生活' },
+        { title: '社恐人日常', desc: '社恐人最尴尬的3个时刻', tag: '生活' },
+        { title: '甲方迷惑需求', desc: '遇到最离谱的甲方需求', tag: '职场' },
+      ]
+      const pick = topics[Math.floor(Math.random() * topics.length)]
+      const id = genId()
+      await pool.query(
+        'INSERT INTO daily_challenges (id, title, description, topic_tag, reward_points, date) VALUES (?, ?, ?, ?, 100, ?)',
+        [id, pick.title, pick.desc, pick.tag, today]
+      )
+      challenges = [{ id, title: pick.title, description: pick.desc, topic_tag: pick.tag, reward_points: 100, entry_count: 0, winner_id: null }]
+    }
+    const ch = challenges[0]
+    let myEntry = null
+    if (req.userId) {
+      const [entries] = await pool.query(
+        'SELECT * FROM challenge_entries WHERE challenge_id = ? AND user_id = ?',
+        [ch.id, req.userId]
+      )
+      if (entries.length > 0) myEntry = entries[0]
+    }
+    res.json({ ...ch, my_entry: myEntry })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.get('/api/challenges/history', async (req, res) => {
+  try {
+    const [challenges] = await pool.query(
+      'SELECT * FROM daily_challenges WHERE status = ? ORDER BY date DESC LIMIT 20',
+      ['ended']
+    )
+    res.json(challenges)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.post('/api/challenges/:id/enter', authMiddleware, async (req, res) => {
+  try {
+    const { title, content } = req.body
+    if (!content) return res.status(400).json({ error: '内容不能为空' })
+    const [challenge] = await pool.query('SELECT * FROM daily_challenges WHERE id = ?', [req.params.id])
+    if (challenge.length === 0) return res.status(404).json({ error: '挑战不存在' })
+    if (challenge[0].status !== 'active') return res.status(400).json({ error: '挑战已结束' })
+    const [existing] = await pool.query(
+      'SELECT id FROM challenge_entries WHERE challenge_id = ? AND user_id = ?',
+      [req.params.id, req.userId]
+    )
+    if (existing.length > 0) return res.status(400).json({ error: '你已经参与了' })
+    const id = genId()
+    await pool.query(
+      'INSERT INTO challenge_entries (id, challenge_id, user_id, title, content) VALUES (?, ?, ?, ?, ?)',
+      [id, req.params.id, req.userId, title || '无题', content]
+    )
+    await pool.query('UPDATE daily_challenges SET entry_count = entry_count + 1 WHERE id = ?', [req.params.id])
+    await earnPoints(req.userId, 10, 'challenge_enter', '参与每日挑战 +10积分')
+    res.json({ success: true, id, message: '参与成功！+10积分' })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.get('/api/challenges/:id/entries', optionalAuth, async (req, res) => {
+  try {
+    const [entries] = await pool.query(
+      `SELECT ce.*, u.name, u.avatar_url
+       FROM challenge_entries ce
+       LEFT JOIN users u ON ce.user_id = u.id
+       WHERE ce.challenge_id = ?
+       ORDER BY ce.vote_count DESC`,
+      [req.params.id]
+    )
+    let myVotes = {}
+    if (req.userId) {
+      const [votes] = await pool.query(
+        'SELECT entry_id FROM challenge_votes WHERE challenge_id = ? AND voter_id = ?',
+        [req.params.id, req.userId]
+      )
+      myVotes = Object.fromEntries(votes.map(v => [v.entry_id, true]))
+    }
+    res.json(entries.map(e => ({ ...e, i_voted: !!myVotes[e.id] })))
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.post('/api/challenges/entries/:id/vote', authMiddleware, async (req, res) => {
+  try {
+    const entryId = req.params.id
+    const [entry] = await pool.query(
+      'SELECT ce.*, dc.status as challenge_status FROM challenge_entries ce JOIN daily_challenges dc ON ce.challenge_id = dc.id WHERE ce.id = ?',
+      [entryId]
+    )
+    if (entry.length === 0) return res.status(404).json({ error: '作品不存在' })
+    if (entry[0].challenge_status !== 'active') return res.status(400).json({ error: '挑战已结束' })
+    if (entry[0].user_id === req.userId) return res.status(400).json({ error: '不能给自己投票' })
+    const [existing] = await pool.query(
+      'SELECT id FROM challenge_votes WHERE challenge_id = ? AND voter_id = ?',
+      [entry[0].challenge_id, req.userId]
+    )
+    if (existing.length > 0) return res.status(400).json({ error: '已投过票了' })
+    await pool.query(
+      'INSERT INTO challenge_votes (challenge_id, entry_id, voter_id) VALUES (?, ?, ?)',
+      [entry[0].challenge_id, entryId, req.userId]
+    )
+    await pool.query('UPDATE challenge_entries SET vote_count = vote_count + 1 WHERE id = ?', [entryId])
+    await earnPoints(entry[0].user_id, 1, 'challenge_vote_received', '你的作品获得1票 +1积分')
+    await earnPoints(req.userId, 2, 'challenge_vote', '为挑战投票 +2积分')
+    res.json({ success: true, message: '投票成功！' })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ====== 热门排行榜 ======
+
+app.get('/api/leaderboard/hot', async (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0]
+    const [memes] = await pool.query(
+      `SELECT m.*, u.name, u.avatar_url, (m.like_count * 2 + m.comment_count * 3 + m.share_count * 5) as hot_score
+       FROM memes m
+       LEFT JOIN users u ON m.creator_id = u.id
+       WHERE m.created_at >= ?
+       ORDER BY hot_score DESC LIMIT 20`,
+      [today + ' 00:00:00']
+    )
+    res.json(memes)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.get('/api/leaderboard/promoters', async (req, res) => {
+  try {
+    const [promoters] = await pool.query(
+      `SELECT u.id, u.name, u.avatar_url, COUNT(tp.id) as promote_count, SUM(tp.status = 'completed') as completed_count
+       FROM topic_promotes tp
+       JOIN users u ON tp.user_id = u.id
+       GROUP BY tp.user_id
+       ORDER BY promote_count DESC LIMIT 20`
+    )
+    res.json(promoters)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.get('/api/leaderboard/points', async (req, res) => {
+  try {
+    const [users] = await pool.query(
+      'SELECT id, name, avatar_url, points, level FROM users ORDER BY points DESC LIMIT 20'
+    )
+    res.json(users)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+// ====== PK对战 ======
+
+app.get('/api/battles/today', optionalAuth, async (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0]
+    let [battles] = await pool.query(
+      'SELECT * FROM battles WHERE date = ? AND status = ?',
+      [today, 'active']
+    )
+    if (battles.length === 0) {
+      const topics = [
+        { sideA: '人类 VS AI', sideB: '人类终将胜出', desc: '谁会主导未来创意工作' },
+        { sideA: '猫', sideB: '狗', desc: '谁才是最佳宠物' },
+        { sideA: '996', sideB: '躺平', desc: '哪种生活方式更正确' },
+        { sideA: 'ChatGPT', sideB: '国产AI', desc: '谁更好用' },
+        { sideA: '奶茶', sideB: '咖啡', desc: '谁才是打工人的续命水' },
+        { sideA: 'iOS', sideB: '安卓', desc: '谁才是最强手机系统' },
+      ]
+      const pick = topics[Math.floor(Math.random() * topics.length)]
+      const id = genId()
+      await pool.query(
+        'INSERT INTO battles (id, title, description, side_a_title, side_b_title, date) VALUES (?, ?, ?, ?, ?, ?)',
+        [id, pick.desc, pick.desc, pick.sideA, pick.sideB, today]
+      )
+      battles = [{ id, title: pick.desc, side_a_title: pick.sideA, side_b_title: pick.sideB, side_a_votes: 0, side_b_votes: 0 }]
+    }
+    const b = battles[0]
+    let myVote = null
+    if (req.userId) {
+      const [votes] = await pool.query(
+        'SELECT side FROM battle_votes WHERE battle_id = ? AND user_id = ?',
+        [b.id, req.userId]
+      )
+      if (votes.length > 0) myVote = votes[0].side
+    }
+    res.json({ ...b, my_vote: myVote })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.post('/api/battles/:id/vote', authMiddleware, async (req, res) => {
+  try {
+    const { side } = req.body
+    if (!['a', 'b'].includes(side)) return res.status(400).json({ error: '只能选a或b' })
+    const [battle] = await pool.query('SELECT * FROM battles WHERE id = ? AND status = ?', [req.params.id, 'active'])
+    if (battle.length === 0) return res.status(404).json({ error: 'PK已结束或不存在' })
+    const [existing] = await pool.query(
+      'SELECT id FROM battle_votes WHERE battle_id = ? AND user_id = ?',
+      [req.params.id, req.userId]
+    )
+    if (existing.length > 0) return res.status(400).json({ error: '你已经投过票了' })
+    await pool.query(
+      'INSERT INTO battle_votes (battle_id, user_id, side) VALUES (?, ?, ?)',
+      [req.params.id, req.userId, side]
+    )
+    const column = side === 'a' ? 'side_a_votes' : 'side_b_votes'
+    await pool.query(`UPDATE battles SET ${column} = ${column} + 1 WHERE id = ?`, [req.params.id])
+    await earnPoints(req.userId, 3, 'battle_vote', '参与每日PK +3积分')
+    res.json({ success: true, message: '投票成功！+3积分' })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.get('/api/battles/history', async (req, res) => {
+  try {
+    const [battles] = await pool.query(
+      'SELECT * FROM battles WHERE status = ? ORDER BY date DESC LIMIT 10',
+      ['ended']
+    )
+    res.json(battles)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // ============================================
 
 testConnection().then(() => {

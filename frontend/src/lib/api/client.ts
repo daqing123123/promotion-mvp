@@ -568,6 +568,65 @@ export async function pinContent(id: string) {
 export async function submitReport(targetType: string, targetId: string, reason: string) {
   return post('/api/reports', { target_type: targetType, target_id: targetId, reason })
 }
+// ====== 每日挑战 ======
+export async function getTodayChallenge() {
+  const res = await fetch(`${API_BASE}/api/challenges/today`, { headers: authHeaders() })
+  return handleResponse(res)
+}
+
+export async function getChallengeEntries(challengeId: string) {
+  const res = await fetch(`${API_BASE}/api/challenges/${challengeId}/entries`, { headers: authHeaders() })
+  return handleResponse(res)
+}
+
+export async function enterChallenge(challengeId: string, data: { title?: string; content: string }) {
+  const res = await fetch(`${API_BASE}/api/challenges/${challengeId}/enter`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  })
+  return handleResponse(res)
+}
+
+export async function voteChallengeEntry(entryId: string) {
+  const res = await fetch(`${API_BASE}/api/challenges/entries/${entryId}/vote`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return handleResponse(res)
+}
+
+// ====== 排行榜 ======
+export async function getHotLeaderboard() {
+  const res = await fetch(`${API_BASE}/api/leaderboard/hot`)
+  return handleResponse(res)
+}
+
+export async function getPromoterLeaderboard() {
+  const res = await fetch(`${API_BASE}/api/leaderboard/promoters`)
+  return handleResponse(res)
+}
+
+export async function getPointsLeaderboard() {
+  const res = await fetch(`${API_BASE}/api/leaderboard/points`)
+  return handleResponse(res)
+}
+
+// ====== PK对战 ======
+export async function getTodayBattle() {
+  const res = await fetch(`${API_BASE}/api/battles/today`, { headers: authHeaders() })
+  return handleResponse(res)
+}
+
+export async function voteBattle(battleId: string, side: string) {
+  const res = await fetch(`${API_BASE}/api/battles/${battleId}/vote`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ side }),
+  })
+  return handleResponse(res)
+}
+
 
 // ============================================
 // 导出（兼容旧接口名）

@@ -10,6 +10,9 @@ import ChatPage from './pages/ChatPage'
 import Profile from './pages/Profile'
 import Search from './pages/Search'
 import Brands from './pages/Brands'
+import DailyChallenge from './pages/DailyChallenge'
+import Leaderboard from './pages/Leaderboard'
+import Battle from './pages/Battle'
 
 // 低频页面懒加载
 const Promote = lazy(() => import('./pages/Promote'))
@@ -122,6 +125,9 @@ function AppLayout() {
             <Route path="/points-center" element={user ? <PointsCenter user={user} /> : <Login setUser={setUser} />} />
             <Route path="/edit-profile" element={user ? <EditProfile user={user} setUser={setUser} /> : <Login setUser={setUser} />} />
             <Route path="/brand" element={<Brands />} />
+              <Route path="/daily-challenge" element={user ? <DailyChallenge user={user} /> : <Login setUser={setUser} />} />
+              <Route path="/leaderboard" element={<Leaderboard />} />
+              <Route path="/battle" element={user ? <Battle user={user} /> : <Login setUser={setUser} />} />
             <Route path="/promoter-stats" element={user ? <PromoterBattle user={user} /> : <Login setUser={setUser} />} />
             <Route path="/notifications" element={user ? <Notifications user={user} /> : <Login setUser={setUser} />} />
             <Route path="/about" element={<About />} />

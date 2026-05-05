@@ -136,6 +136,39 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
   if (loading && contents.length === 0) {
     return (
       <div className="w-full h-screen bg-black">
+      {/* Top Action Cards */}
+      <div className="pt-14 px-5 pb-2 flex gap-2 overflow-x-auto">
+        <a href="/daily-challenge" className="flex-shrink-0 bg-gradient-to-r from-purple-600/30 to-pink-600/30 rounded-xl p-3 border border-purple-500/20 active:scale-95 transition-transform" style="min-width:45%">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">🔥</span>
+            <div>
+              <p className="text-white text-sm font-bold">每日造梗挑战</p>
+              <p className="text-white/40 text-xs">今日话题参赛+10积分</p>
+            </div>
+            <span className="ml-auto text-white/30">→</span>
+          </div>
+        </a>
+        <a href="/battle" className="flex-shrink-0 bg-gradient-to-r from-orange-600/30 to-red-600/30 rounded-xl p-3 border border-orange-500/20 active:scale-95 transition-transform" style="min-width:45%">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">⚔️</span>
+            <div>
+              <p className="text-white text-sm font-bold">每日PK大战</p>
+              <p className="text-white/40 text-xs">投票站队赢+3积分</p>
+            </div>
+            <span className="ml-auto text-white/30">→</span>
+          </div>
+        </a>
+      </div>
+      <div className="px-5 pb-3">
+        <a href="/leaderboard" className="flex items-center gap-2 bg-gradient-to-r from-blue-600/20 to-cyan-600/20 rounded-xl p-3 border border-blue-500/20 active:scale-95 transition-transform">
+          <span className="text-lg">🏆</span>
+          <div className="flex-1">
+            <p className="text-white text-sm font-bold">热门排行榜</p>
+            <p className="text-white/40 text-xs">今日最热梗·最强推广·积分富豪</p>
+          </div>
+          <span className="text-white/30">查看 →</span>
+        </a>
+      </div>
         <div className="pt-14 px-5 pb-4">
           <div className="h-8 w-32 bg-white/10 rounded mb-4 animate-pulse" />
           <div className="space-y-4">
@@ -165,6 +198,39 @@ export default function HomeV2({ user, setUser: _setUser, isMobile: _isMobile }:
 
   return (
     <div className="w-full h-screen bg-black">
+      {/* Top Action Cards */}
+      <div className="pt-14 px-5 pb-2 flex gap-2 overflow-x-auto">
+        <a href="/daily-challenge" className="flex-shrink-0 bg-gradient-to-r from-purple-600/30 to-pink-600/30 rounded-xl p-3 border border-purple-500/20 active:scale-95 transition-transform" style="min-width:45%">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">🔥</span>
+            <div>
+              <p className="text-white text-sm font-bold">每日造梗挑战</p>
+              <p className="text-white/40 text-xs">今日话题参赛+10积分</p>
+            </div>
+            <span className="ml-auto text-white/30">→</span>
+          </div>
+        </a>
+        <a href="/battle" className="flex-shrink-0 bg-gradient-to-r from-orange-600/30 to-red-600/30 rounded-xl p-3 border border-orange-500/20 active:scale-95 transition-transform" style="min-width:45%">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">⚔️</span>
+            <div>
+              <p className="text-white text-sm font-bold">每日PK大战</p>
+              <p className="text-white/40 text-xs">投票站队赢+3积分</p>
+            </div>
+            <span className="ml-auto text-white/30">→</span>
+          </div>
+        </a>
+      </div>
+      <div className="px-5 pb-3">
+        <a href="/leaderboard" className="flex items-center gap-2 bg-gradient-to-r from-blue-600/20 to-cyan-600/20 rounded-xl p-3 border border-blue-500/20 active:scale-95 transition-transform">
+          <span className="text-lg">🏆</span>
+          <div className="flex-1">
+            <p className="text-white text-sm font-bold">热门排行榜</p>
+            <p className="text-white/40 text-xs">今日最热梗·最强推广·积分富豪</p>
+          </div>
+          <span className="text-white/30">查看 →</span>
+        </a>
+      </div>
       <FeedContainer contents={contents} user={user} onMeme={(c) => setMemeTarget(c)} onLoadMore={handleLoadMore} loadingMore={loadingMore} />
       {memeTarget && (
         <MemeModal targetTitle={memeTarget.title} onClose={() => setMemeTarget(null)} onSuccess={async (meme) => {
