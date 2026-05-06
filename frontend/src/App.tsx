@@ -1,7 +1,44 @@
 import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
-import { useState, useEffect, lazy, Suspense } from 'react'
+import { useState, useEffect, lazy, Suspense, Component } from 'react'
 import { ToastProvider } from './lib/toast'
 import BottomNav from './components/BottomNav'
+
+// 错误边界 - 防止白屏
+class ErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: any) {
+    super(props)
+    this.state = { hasError: false, error: null }
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error }
+  }
+  componentDidCatch(error: Error, info: any) {
+    console.error('App crashed:', error, info)
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-white flex items-center justify-center p-6">
+          <div className="text-center max-w-sm">
+            <div className="text-5xl mb-4">🌊</div>
+            <h2 className="text-lg font-bold text-gray-900 mb-2">出了点小问题</h2>
+            <p className="text-sm text-gray-500 mb-4">{this.state.error?.message || '页面加载失败'}</p>
+            <button
+              onClick={() => { this.setState({ hasError: false, error: null }); window.location.reload() }}
+              className="px-5 py-2 bg-blue-500 text-white rounded-xl text-sm font-medium"
+            >
+              重新加载
+            </button>
+            <p className="mt-3 text-xs text-gray-400">
+              如果还是不行，试试清除缓存后刷新
+            </p>
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 // 常用页面直接导入（不懒加载）— 切换秒开
 import HomeV2 from './pages/HomeV2'
@@ -145,9 +182,11 @@ function AppLayout() {
 function App() {
   return (
     <Router>
-      <ToastProvider>
-        <AppLayout />
-      </ToastProvider>
+      <ErrorBoundary>
+        <ToastProvider>
+          <AppLayout />
+        </ToastProvider>
+      </ErrorBoundary>
     </Router>
   )
 }
