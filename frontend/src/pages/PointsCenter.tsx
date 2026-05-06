@@ -131,6 +131,25 @@ export default function PointsCenter({ user }: { user: any }) {
         </div>
       </div>
 
+      {/* 盲盒系统 */}
+      <div className="mx-5 mt-4 bg-white rounded-2xl p-5 border border-gray-100"
+        style={{ background: 'linear-gradient(135deg, #1a1a2e, #2a1a3e)' }}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex-1">
+            <h3 className="text-sm font-bold text-white mb-1">🎁 积分盲盒</h3>
+            <p className="text-xs text-gray-400">花30积分开一次，随机出积分/特效/碎片/神秘奖励！</p>
+          </div>
+          <button
+            onClick={() => navigate('/blind-box')}
+            className="px-5 py-2.5 rounded-xl font-bold text-sm"
+            style={{ background: 'linear-gradient(135deg, #ff6b6b, #ffd93d)', color: '#1a1a2e' }}
+          >
+            去开盲盒 🎁
+          </button>
+        </div>
+      </div>
+
       {/* 积分规则 */}
       <div className="mx-5 mt-4 bg-white rounded-2xl p-5 border border-gray-100">
         <h3 className="text-sm font-bold text-gray-900 mb-3">📖 积分规则</h3>

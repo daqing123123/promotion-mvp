@@ -2174,6 +2174,116 @@ app.get('/api/battles/history', async (req, res) => {
   }
 })
 
+// ====== 盲盒系统 ======
+
+app.get('/api/blind-box/items', async (req, res) => {
+  try {
+    const [items] = await pool.query(
+      'SELECT id, name, type, rarity, value, title, description, icon, weight FROM blind_boxes WHERE is_active = 1 ORDER BY FIELD(rarity, "legendary","epic","rare","uncommon","common"), weight DESC'
+    )
+    res.json(items)
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+app.post('/api/blind-box/open', authMiddleware, async (req, res) => {
+  try {
+    const COST = 30
+    const [user] = await pool.query('SELECT points FROM users WHERE id = ?', [req.userId])
+    if (user.length === 0) return res.status(404).json({ error: '用户不存在' })
+    if (user[0].points < COST) return res.status(400).json({ error: `积分不够！开盲盒要${COST}积分，你只有${user[0].points}积分` })
+
+    const [items] = await pool.query('SELECT * FROM blind_boxes WHERE is_active = 1')
+    if (items.length === 0) return res.status(400).json({ error: '暂时没有盲盒' })
+
+    const totalWeight = items.reduce((s, i) => s + i.weight, 0)
+    let r = Math.random() * totalWeight
+    let picked = items[0]
+    for (const item of items) { r -= item.weight; if (r <= 0) { picked = item; break } }
+
+    await pool.query('UPDATE users SET points = points - ? WHERE id = ?', [COST, req.userId])
+    await pool.query('INSERT INTO points_records (id, user_id, type, amount, description) VALUES (?, ?, ?, ?, ?)',
+      [genId(), req.userId, 'blind_box_cost', -COST, '开盲盒消耗'])
+
+    let result = { box: { id: picked.id, name: picked.name, type: picked.type, rarity: picked.rarity, icon: picked.icon, title: picked.title, description: picked.description }, points_earned: 0, effect: null, fragment: null, surprise: null }
+
+    if (picked.type === 'points') {
+      await earnPoints(req.userId, picked.value, 'blind_box', `盲盒开出${picked.value}积分`)
+      result.points_earned = picked.value
+    } else if (picked.type === 'effect') {
+      let h = 24, et = 'color_nickname'
+      if (picked.icon === '✨') { h = 48; et = 'glow_avatar' }
+      else if (picked.icon === '🐟') { h = 168; et = 'fortune_badge' }
+      const exp = new Date(Date.now() + h * 3600000)
+      await pool.query('INSERT INTO user_effects (id, user_id, effect_type, effect_data, expires_at) VALUES (?, ?, ?, ?, ?)',
+        [genId(), req.userId, et, JSON.stringify({ title: picked.title, icon: picked.icon }), exp])
+      result.effect = { type: et, title: picked.title, expires_at: exp.toISOString() }
+    } else if (picked.type === 'boost') {
+      let et = picked.icon === '🚀' ? 'content_boost' : 'double_points'
+      let h = picked.icon === '🚀' ? 24 : 1
+      const exp = new Date(Date.now() + h * 3600000)
+      await pool.query('INSERT INTO user_effects (id, user_id, effect_type, effect_data, expires_at) VALUES (?, ?, ?, ?, ?)',
+        [genId(), req.userId, et, JSON.stringify({ title: picked.title, icon: picked.icon }), exp])
+      result.effect = { type: et, title: picked.title, expires_at: exp.toISOString() }
+    } else if (picked.type === 'fragment') {
+      const ftMap = { '⭐': 'star', '🌙': 'moon', '☀️': 'sun', '💠': 'diamond' }
+      const ft = ftMap[picked.icon] || 'star'
+      await pool.query(`INSERT INTO user_fragments (id, user_id, fragment_type, quantity) VALUES (?, ?, ?, 1) ON DUPLICATE KEY UPDATE quantity = quantity + 1`,
+        [genId(), req.userId, ft])
+      result.fragment = { type: ft, icon: picked.icon, title: picked.title }
+    } else if (picked.type === 'surprise') {
+      if (picked.icon === '🔄') {
+        await pool.query('UPDATE users SET points = points + ? WHERE id = ?', [COST, req.userId])
+        await pool.query('INSERT INTO points_records (id, user_id, type, amount, description) VALUES (?, ?, ?, ?, ?)',
+          [genId(), req.userId, 'blind_box_refund', COST, '盲盒开出再来一次'])
+      }
+      result.surprise = { icon: picked.icon, title: picked.title, description: picked.description }
+    }
+
+    await pool.query('INSERT INTO blind_box_records (id, user_id, box_id, box_name, box_type, box_rarity, box_icon, box_title, points_earned) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [genId(), req.userId, picked.id, picked.name, picked.type, picked.rarity, picked.icon, picked.title, result.points_earned])
+
+    const [up] = await pool.query('SELECT points FROM users WHERE id = ?', [req.userId])
+    result.remaining_points = up[0].points
+    res.json(result)
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+app.get('/api/blind-box/history', authMiddleware, async (req, res) => {
+  try {
+    const [records] = await pool.query('SELECT * FROM blind_box_records WHERE user_id = ? ORDER BY opened_at DESC LIMIT 50', [req.userId])
+    res.json(records)
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+app.get('/api/blind-box/effects', authMiddleware, async (req, res) => {
+  try {
+    await pool.query('UPDATE user_effects SET is_active = 0 WHERE expires_at < NOW() AND is_active = 1')
+    const [effects] = await pool.query('SELECT * FROM user_effects WHERE user_id = ? AND is_active = 1 ORDER BY expires_at DESC', [req.userId])
+    res.json(effects)
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+app.post('/api/blind-box/fragments/combine', authMiddleware, async (req, res) => {
+  try {
+    const { fragment_type } = req.body
+    if (!fragment_type) return res.status(400).json({ error: '? 哪个碎片' })
+    const [frags] = await pool.query('SELECT * FROM user_fragments WHERE user_id = ? AND fragment_type = ?', [req.userId, fragment_type])
+    if (frags.length === 0 || frags[0].quantity < 3) return res.status(400).json({ error: '碎片不够！要3个同样的才行' })
+    await pool.query('UPDATE user_fragments SET quantity = quantity - 3 WHERE user_id = ? AND fragment_type = ?', [req.userId, fragment_type])
+    const rewards = { star: { p: 150, m: '集齐星星碎片+150积分！' }, moon: { p: 300, m: '集齐月亮碎片+300积分！' }, sun: { p: 600, m: '集齐太阳碎片+600积分！🌟' }, diamond: { p: 1500, m: '集齐钻石碎片+1500积分！！！💎🎉' } }
+    const rw = rewards[fragment_type] || { p: 100, m: '合成成功+100积分' }
+    await earnPoints(req.userId, rw.p, 'fragment_combine', rw.m)
+    res.json({ success: true, points: rw.p, message: rw.m })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+app.get('/api/blind-box/fragments', authMiddleware, async (req, res) => {
+  try {
+    const [frags] = await pool.query('SELECT fragment_type, quantity FROM user_fragments WHERE user_id = ? AND quantity > 0', [req.userId])
+    res.json(frags)
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
 // ============================================
 
 testConnection().then(() => {

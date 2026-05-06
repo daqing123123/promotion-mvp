@@ -634,3 +634,33 @@ export async function voteBattle(battleId: string, side: string) {
 
 // 兼容 supabase 的导出名
 export { getCurrentUser as getUser }
+
+// ====== 盲盒系统 ======
+
+export async function getBlindBoxItems() {
+  try { return await get('/api/blind-box/items') }
+  catch { return [] }
+}
+
+export async function openBlindBox() {
+  return post('/api/blind-box/open')
+}
+
+export async function getBlindBoxHistory() {
+  try { return await get('/api/blind-box/history') }
+  catch { return [] }
+}
+
+export async function getBlindBoxEffects() {
+  try { return await get('/api/blind-box/effects') }
+  catch { return [] }
+}
+
+export async function combineFragments(fragmentType: string) {
+  return post('/api/blind-box/fragments/combine', { fragment_type: fragmentType })
+}
+
+export async function getFragments() {
+  try { return await get('/api/blind-box/fragments') }
+  catch { return [] }
+}
