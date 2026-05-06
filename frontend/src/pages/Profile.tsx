@@ -235,7 +235,7 @@ export default function Profile({ user, setUser: _setUser }: { user: any; setUse
       {/* 快捷入口（仅自己） */}
       {isOwnProfile && (
         <div className="mx-5 mt-4 grid grid-cols-4 gap-3">
-          <button onClick={() => navigate('/points-center')} className="bg-white rounded-xl p-3 text-center border border-gray-100">
+          <button onClick={() => navigate('/points')} className="bg-white rounded-xl p-3 text-center border border-gray-100">
             <div className="text-xl mb-1">💰</div>
             <div className="text-[10px] text-gray-600">积分中心</div>
           </button>

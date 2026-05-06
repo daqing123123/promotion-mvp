@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, useLocation, useNavigate } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useState, useEffect, lazy, Suspense, Component } from 'react'
 import { ToastProvider } from './lib/toast'
 import BottomNav from './components/BottomNav'
@@ -65,7 +65,6 @@ const Activities = lazy(() => import('./pages/Activities'))
 const Points = lazy(() => import('./pages/Points'))
 const Achievements = lazy(() => import('./pages/Achievements'))
 const Invite = lazy(() => import('./pages/Invite'))
-const PointsCenter = lazy(() => import('./pages/PointsCenter'))
 const EditProfile = lazy(() => import('./pages/EditProfile'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Notifications = lazy(() => import('./pages/Notifications'))
@@ -160,7 +159,7 @@ function AppLayout() {
             <Route path="/points" element={user ? <Points user={user} /> : <Login setUser={setUser} />} />
             <Route path="/achievements" element={user ? <Achievements user={user} /> : <Login setUser={setUser} />} />
             <Route path="/invite" element={user ? <Invite user={user} /> : <Login setUser={setUser} />} />
-            <Route path="/points-center" element={user ? <PointsCenter user={user} /> : <Login setUser={setUser} />} />
+            <Route path="/points-center" element={<Navigate to="/points" replace />} />
             <Route path="/edit-profile" element={user ? <EditProfile user={user} setUser={setUser} /> : <Login setUser={setUser} />} />
             <Route path="/brand" element={<Brands />} />
               <Route path="/daily-challenge" element={user ? <DailyChallenge user={user} /> : <Login setUser={setUser} />} />
