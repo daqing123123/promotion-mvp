@@ -48,8 +48,12 @@ export default function Login({ setUser }: { setUser: any }) {
     <div className="min-h-screen bg-white flex flex-col">
       <div className="flex-1 flex flex-col justify-center px-8 max-w-lg mx-auto w-full">
         <div className="text-center mb-12">
-          <div className="w-20 h-20 bg-black rounded-3xl flex items-center justify-center mx-auto mb-5 shadow-lg shadow-black/10">
-            <span className="text-3xl text-white font-bold">浪</span>
+          <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-lg shadow-blue-500/20">
+            <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 18C6 12 14 6 18 6C22 6 30 12 32 18C30 24 22 30 18 30C14 30 6 24 4 18Z" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+              <path d="M4 18C8 14 14 12 18 12C22 12 28 14 32 18" stroke="white" strokeWidth="2.5" strokeLinecap="round"/>
+              <path d="M10 18C12 15 15 14 18 14C21 14 24 15 26 18" stroke="white" strokeWidth="2" strokeLinecap="round" opacity="0.7"/>
+            </svg>
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-1">欢迎回来</h1>
           <p className="text-gray-400 text-sm">登录你的巨浪账号</p>

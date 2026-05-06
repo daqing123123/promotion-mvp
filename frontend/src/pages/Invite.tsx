@@ -2,20 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getOrCreateInviteCode, getInviteStats, getInviteLeaderboard } from '../lib/api/client'
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://81.70.71.132:3001'
-async function post(path, body) {
-  const token = localStorage.getItem('julang_token')
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify(body),
-  })
-  const data = await res.json()
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
-  return data
-}
+import { getOrCreateInviteCode, getInviteStats, getInviteLeaderboard, claimInviteCode } from '../lib/api/client'
 import { toast } from '../lib/toast'
 
 const GROWTH_LEVELS = [
@@ -98,9 +85,7 @@ export default function Invite({ user }: { user: any }) {
     }
     setClaiming(true)
     try {
-      await post('/api/invite/claim', {
-        code: inputCode.trim().toUpperCase(),
-      })
+      await claimInviteCode(inputCode.trim())
       toast.success('🎉 邀请码使用成功！+50积分')
       setInputCode('')
       loadInviteData()
