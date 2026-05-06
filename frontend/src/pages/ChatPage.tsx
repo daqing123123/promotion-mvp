@@ -4,6 +4,15 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getNotifications, markAllNotificationsRead } from '../lib/api/client'
 
+const NOTIF_CONFIG: Record<string, { label: string; color: string }> = {
+  like: { label: '赞', color: '#f43f5e' },
+  comment: { label: '评', color: '#3b82f6' },
+  remix: { label: '创', color: '#8b5cf6' },
+  promote: { label: '推', color: '#f97316' },
+  achievement: { label: '勋', color: '#eab308' },
+  system: { label: '系', color: '#06b6d4' },
+}
+
 export default function ChatPage({ user }: { user: any }) {
   const navigate = useNavigate()
   const [tab, setTab] = useState<'notifications' | 'chats'>('notifications')
@@ -27,7 +36,6 @@ export default function ChatPage({ user }: { user: any }) {
     fetchNotifications()
   }
 
-  // 切换到聊天 tab 时清除红点
   const handleTabChange = (t: 'notifications' | 'chats') => {
     setTab(t)
     if (t === 'chats') setChatUnread(0)
@@ -46,79 +54,116 @@ export default function ChatPage({ user }: { user: any }) {
     return `${days}天前`
   }
 
-  const getNotifIcon = (type: string) => {
-    const icons: Record<string, string> = { like: '❤️', comment: '💬', remix: '💡', promote: '📈', achievement: '🏅', system: '⏰' }
-    return icons[type] || '📢'
-  }
+  const getNotifConfig = (type: string) => NOTIF_CONFIG[type] || { label: '通', color: '#94a3b8' }
 
-  const chats = [
-    { id: '1', name: '系统通知', lastMsg: '欢迎加入巨浪！', time: '刚刚', avatar: '📢', unread: 0 },
-  ]
-
+  // 登录前状态
   if (!user) {
     return (
-      <div className="bg-white min-h-screen flex flex-col items-center justify-center pb-20">
-        <div className="text-4xl mb-4">💬</div>
-        <p className="text-gray-400 mb-4">登录后查看消息</p>
-        <button onClick={() => navigate('/login')} className="px-6 py-2 bg-black text-white rounded-full text-sm font-medium">去登录</button>
+      <div className="min-h-screen bg-gradient-to-b from-slate-950 to-slate-900 flex flex-col items-center justify-center pb-20">
+        <div className="mb-6">
+          <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
+            <rect x="8" y="12" width="40" height="32" rx="4" stroke="#475569" strokeWidth="1.5"/>
+            <path d="M8 16l18 12a2 2 0 002.5 0L48 16" stroke="#475569" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+        </div>
+        <p className="text-slate-400 mb-4">登录后查看消息</p>
+        <button onClick={() => navigate('/login')} className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors">去登录</button>
       </div>
     )
   }
 
   return (
-    <div className="bg-white min-h-screen pb-20">
+    <div className="min-h-screen bg-gradient-to-b from-slate-950 to-slate-900 pb-20">
+      {/* Header */}
       <div className="px-5 pt-12 pb-4">
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-bold text-gray-900">消息</h1>
-          <div className="flex gap-2">
-            {unreadCount > 0 && (
-              <button onClick={markAllRead} className="text-sm text-blue-500">全部已读</button>
-            )}
-          </div>
+          <h1 className="text-2xl font-bold text-white">消息</h1>
+          {unreadCount > 0 && (
+            <button onClick={markAllRead} className="text-sm text-indigo-400 hover:text-indigo-300 transition-colors">全部已读</button>
+          )}
         </div>
+
+        {/* Tabs */}
         <div className="flex gap-2">
-          <button onClick={() => handleTabChange('notifications')} className={`px-5 py-2 rounded-full text-sm font-medium transition-all ${tab === 'notifications' ? 'bg-black text-white' : 'bg-gray-100 text-gray-600'}`}>
-            通知 {unreadCount > 0 && <span className="ml-1 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{unreadCount}</span>}
+          <button
+            onClick={() => handleTabChange('notifications')}
+            className={`px-5 py-2 rounded-xl text-sm font-medium transition-all ${
+              tab === 'notifications'
+                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+                : 'bg-slate-800/80 text-slate-400 hover:text-white'
+            }`}
+          >
+            通知
+            {unreadCount > 0 && (
+              <span className="ml-1.5 bg-rose-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{unreadCount}</span>
+            )}
           </button>
-          <button onClick={() => handleTabChange('chats')} className={`px-5 py-2 rounded-full text-sm font-medium transition-all ${tab === 'chats' ? 'bg-black text-white' : 'bg-gray-100 text-gray-600'}`}>
-            聊天 {chatUnread > 0 && <span className="ml-1 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{chatUnread}</span>}
+          <button
+            onClick={() => handleTabChange('chats')}
+            className={`px-5 py-2 rounded-xl text-sm font-medium transition-all ${
+              tab === 'chats'
+                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+                : 'bg-slate-800/80 text-slate-400 hover:text-white'
+            }`}
+          >
+            聊天
+            {chatUnread > 0 && (
+              <span className="ml-1.5 bg-rose-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{chatUnread}</span>
+            )}
           </button>
         </div>
       </div>
 
+      {/* Notifications */}
       {tab === 'notifications' ? (
         <div>
           {loading ? (
-            <div className="text-center py-10 text-gray-400">加载中...</div>
-          ) : notifications.length === 0 ? (
-            <div className="text-center py-10 text-gray-400">暂无通知</div>
-          ) : notifications.map(n => (
-            <div key={n.id} className={`flex items-start gap-4 px-5 py-4 border-b border-gray-50 ${!n.is_read ? 'bg-blue-50/30' : ''}`}>
-              <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-lg shrink-0">{getNotifIcon(n.type)}</div>
-              <div className="flex-1 min-w-0">
-                <h3 className="text-sm font-medium text-gray-900 mb-0.5">{n.title}</h3>
-                <p className="text-xs text-gray-500 mb-1 line-clamp-2">{n.content}</p>
-                <span className="text-[10px] text-gray-400">{getTimeAgo(n.created_at)}</span>
+            <div className="text-center py-16">
+              <div className="space-y-3 px-5">
+                {[1,2,3].map(i => (
+                  <div key={i} className="bg-slate-800/40 rounded-xl p-4 animate-pulse">
+                    <div className="flex gap-3">
+                      <div className="w-10 h-10 bg-slate-700/50 rounded-full shrink-0" />
+                      <div className="flex-1"><div className="h-4 w-24 bg-slate-700/50 rounded mb-2" /><div className="h-3 w-full bg-slate-700/50 rounded" /></div>
+                    </div>
+                  </div>
+                ))}
               </div>
-              {!n.is_read && <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 shrink-0"></div>}
             </div>
-          ))}
+          ) : notifications.length === 0 ? (
+            <div className="text-center py-16 px-5">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-800/50 flex items-center justify-center">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9" stroke="#475569" strokeWidth="1.5"/><path d="M13.73 21a2 2 0 01-3.46 0" stroke="#475569" strokeWidth="1.5"/></svg>
+              </div>
+              <p className="text-slate-500 text-sm">暂无通知</p>
+            </div>
+          ) : (
+            notifications.map(n => {
+              const cfg = getNotifConfig(n.type)
+              return (
+                <div key={n.id} className={`flex items-start gap-4 px-5 py-4 border-b border-slate-800/50 transition-colors ${!n.is_read ? 'bg-indigo-500/5' : ''}`}>
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-xs font-bold text-white" style={{ backgroundColor: cfg.color + '30', color: cfg.color }}>
+                    {cfg.label}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-medium text-white mb-0.5">{n.title}</h3>
+                    <p className="text-xs text-slate-400 mb-1 line-clamp-2">{n.content}</p>
+                    <span className="text-[10px] text-slate-600">{getTimeAgo(n.created_at)}</span>
+                  </div>
+                  {!n.is_read && <div className="w-2 h-2 bg-indigo-500 rounded-full mt-2 shrink-0" />}
+                </div>
+              )
+            })
+          )}
         </div>
       ) : (
-        <div>
-          {chats.map(c => (
-            <div key={c.id} className="flex items-center gap-4 px-5 py-4 border-b border-gray-50 active:bg-gray-50">
-              <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center text-2xl shrink-0">{c.avatar}</div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-0.5">
-                  <h3 className="text-sm font-bold text-gray-900">{c.name}</h3>
-                  <span className="text-[10px] text-gray-400">{c.time}</span>
-                </div>
-                <p className="text-xs text-gray-500 truncate">{c.lastMsg}</p>
-              </div>
-              {c.unread > 0 && <div className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{c.unread}</div>}
-            </div>
-          ))}
+        /* Chats - 暂无真实聊天功能 */
+        <div className="text-center py-16 px-5">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-800/50 flex items-center justify-center">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" stroke="#475569" strokeWidth="1.5"/></svg>
+          </div>
+          <p className="text-slate-400 text-sm mb-1">聊天功能开发中</p>
+          <p className="text-slate-600 text-xs">你可以通过内容评论与其他用户互动</p>
         </div>
       )}
     </div>

@@ -52,10 +52,10 @@ export default function FeedContainer({ contents, user, onMeme, onLoadMore, load
     window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h)
   }, [currentIndex, contents.length, modalOpen])
 
-  if (!currentContent) return <div className="w-full h-screen bg-black flex items-center justify-center"><p className="text-white/50">没有更多内容了</p></div>
+  if (!currentContent) return <div className="w-full h-screen bg-gradient-to-b from-slate-950 to-slate-900 flex items-center justify-center"><p className="text-white/50">没有更多内容了</p></div>
 
   return (
-    <div className="w-full h-screen bg-black relative overflow-hidden" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} onWheel={handleWheel}>
+    <div className="w-full h-screen bg-gradient-to-b from-slate-950 to-slate-900 relative overflow-hidden" onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd} onWheel={handleWheel}>
       <ContentRenderer content={currentContent} isActive={true} />
       <ContentInfo content={currentContent} />
       <FeedControls content={currentContent} user={user} onMeme={() => onMeme?.(currentContent)} onModalToggle={setModalOpen} />
