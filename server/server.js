@@ -1251,7 +1251,7 @@ app.post('/api/topics', authMiddleware, async (req, res) => {
         brand_name, brand_logo, brand_description,
         promote_reward, promote_target, promote_count,
         reward_type, reward_description, reward_pool,
-        coupon_type, coupon_value, coupon_count, created_by)
+        coupon_type, coupon_value, coupon_count, end_date, created_by)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, title, description || '', type || 'discussion',
         typeof tags === 'string' ? tags : JSON.stringify(tags || []),
@@ -1261,6 +1261,7 @@ app.post('/api/topics', authMiddleware, async (req, res) => {
         promote_reward || 20, promote_target || 100, promote_count || 0,
         reward_type || 'points', reward_description || '', reward_pool || 0,
         coupon_type || '', coupon_value || '', coupon_count || 0,
+        req.body.end_date || null,
         req.userId]
     )
 
