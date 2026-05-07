@@ -72,6 +72,7 @@ const PromoterBattle = lazy(() => import('./pages/PromoterBattle'))
 const About = lazy(() => import('./pages/About'))
 const Terms = lazy(() => import('./pages/Terms'))
 const Privacy = lazy(() => import('./pages/Privacy'))
+const Admin = lazy(() => import('./pages/Admin'))
 
 function PageLoader() {
   return (
@@ -171,6 +172,7 @@ function AppLayout() {
             <Route path="/about" element={<About />} />
             <Route path="/terms" element={<Terms />} />
             <Route path="/privacy" element={<Privacy />} />
+            <Route path="/admin" element={user ? <Admin user={user} /> : <Login setUser={setUser} />} />
           </Routes>
         </Suspense>
       </div>

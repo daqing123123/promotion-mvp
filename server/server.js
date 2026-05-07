@@ -2284,6 +2284,110 @@ app.get('/api/blind-box/fragments', authMiddleware, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }) }
 })
 
+
+// ===== 后台管理 =====
+
+// 管理员权限中间件
+async function adminAuth(req, res, next) {
+  if (!req.userId) return res.status(401).json({ error: '未登录' })
+  try {
+    const [[u]] = await pool.query('SELECT is_admin FROM users WHERE id = ?', [req.userId])
+    if (!u || !u.is_admin) return res.status(403).json({ error: '不是管理员' })
+    next()
+  } catch { res.status(500).json({ error: '服务器错误' }) }
+}
+
+// 仪表盘统计
+app.get('/api/admin/stats', authMiddleware, adminAuth, async (req, res) => {
+  try {
+    const [[{ totalUsers }]] = await pool.query('SELECT COUNT(*) as totalUsers FROM users')
+    const [[{ totalContents }]] = await pool.query('SELECT COUNT(*) as totalContents FROM contents')
+    const [[{ totalTopics }]] = await pool.query('SELECT COUNT(*) as totalTopics FROM topics')
+    const [[{ totalComments }]] = await pool.query('SELECT COUNT(*) as totalComments FROM comments')
+    const [[{ totalLikes }]] = await pool.query('SELECT COUNT(*) as totalLikes FROM likes')
+    const [[{ todayUsers }]] = await pool.query('SELECT COUNT(*) as todayUsers FROM users WHERE DATE(created_at) = CURDATE()')
+    const [[{ todayContents }]] = await pool.query('SELECT COUNT(*) as todayContents FROM contents WHERE DATE(created_at) = CURDATE()')
+    const [[{ yesterdayContents }]] = await pool.query('SELECT COUNT(*) as yesterdayContents FROM contents WHERE DATE(created_at) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)')
+    res.json({ totalUsers, totalContents, totalTopics, totalComments, totalLikes, todayUsers, todayContents, yesterdayContents })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// 用户列表
+app.get('/api/admin/users', authMiddleware, adminAuth, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 20
+    const search = req.query.search || ''
+    const offset = (page - 1) * limit
+    let where = ''
+    const params = []
+    if (search) {
+      where = ' WHERE username LIKE ? OR name LIKE ?'
+      params.push('%' + search + '%', '%' + search + '%')
+    }
+    const [[{ total }]] = await pool.query('SELECT COUNT(*) as total FROM users' + where, params)
+    const [users] = await pool.query(
+      'SELECT id, username, name, avatar, level, points, is_admin, is_banned, created_at FROM users' + where + ' ORDER BY created_at DESC LIMIT ? OFFSET ?',
+      [...params, limit, offset]
+    )
+    res.json({ users, total, page, limit })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// 更新用户状态
+app.put('/api/admin/users/:id', authMiddleware, adminAuth, async (req, res) => {
+  try {
+    const { is_banned, is_admin } = req.body
+    const sets = []
+    const vals = []
+    if (is_banned !== undefined) { sets.push('is_banned = ?'); vals.push(is_banned ? 1 : 0) }
+    if (is_admin !== undefined) { sets.push('is_admin = ?'); vals.push(is_admin ? 1 : 0) }
+    if (!sets.length) return res.status(400).json({ error: '没有要更新的' })
+    vals.push(req.params.id)
+    await pool.query('UPDATE users SET ' + sets.join(', ') + ' WHERE id = ?', vals)
+    res.json({ success: true })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// 内容列表
+app.get('/api/admin/contents', authMiddleware, adminAuth, async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1
+    const limit = parseInt(req.query.limit) || 20
+    const search = req.query.search || ''
+    const offset = (page - 1) * limit
+    let where = ''
+    const params = []
+    if (search) {
+      where = ' WHERE c.title LIKE ? OR u.username LIKE ?'
+      params.push('%' + search + '%', '%' + search + '%')
+    }
+    const [[{ total }]] = await pool.query(
+      'SELECT COUNT(*) as total FROM contents c LEFT JOIN users u ON c.user_id = u.id' + where, params
+    )
+    const [contents] = await pool.query(
+      'SELECT c.id, c.title, c.content_type, c.user_id, u.username, u.name, ' +
+      'COALESCE(c.like_count,0) as like_count, COALESCE(c.comment_count,0) as comment_count, ' +
+      'COALESCE(c.view_count,0) as view_count, c.created_at ' +
+      'FROM contents c LEFT JOIN users u ON c.user_id = u.id' + where +
+      ' ORDER BY c.created_at DESC LIMIT ? OFFSET ?',
+      [...params, limit, offset]
+    )
+    res.json({ contents, total, page, limit })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
+// 删除内容
+app.delete('/api/admin/contents/:id', authMiddleware, adminAuth, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM likes WHERE content_id = ?', [req.params.id])
+    await pool.query('DELETE FROM comments WHERE content_id = ?', [req.params.id])
+    await pool.query('DELETE FROM promotes WHERE content_id = ?', [req.params.id])
+    await pool.query('DELETE FROM contents WHERE id = ?', [req.params.id])
+    res.json({ success: true })
+  } catch (err) { res.status(500).json({ error: err.message }) }
+})
+
 // ============================================
 
 testConnection().then(() => {

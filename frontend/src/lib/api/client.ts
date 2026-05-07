@@ -2,7 +2,7 @@
 // 巨浪 Julang - 前端 API 客户端
 // API 走 cloudflared HTTPS 隧道 → 腾讯云 81.70.71.132:3001
 
-const API_BASE = import.meta.env.VITE_API_URL || 'https://bags-spa-advert-departmental.trycloudflare.com'
+export const API_BASE = import.meta.env.VITE_API_URL || 'https://bags-spa-advert-departmental.trycloudflare.com'
 
 // ===== 通用请求工具 =====
 
