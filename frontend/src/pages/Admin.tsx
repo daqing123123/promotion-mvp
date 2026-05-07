@@ -71,6 +71,23 @@ export default function Admin({ user }: AdminProps) {
   const [loading, setLoading] = useState(true)
   const [noPermission, setNoPermission] = useState(false)
 
+  // ============ 登录守卫 ============
+  const token = getToken()
+  if (!token || !user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center p-6">
+        <div className="text-center">
+          <div className="text-4xl mb-4">🔐</div>
+          <h2 className="text-lg font-bold text-white mb-2">需要登录</h2>
+          <p className="text-slate-400 text-sm mb-6">管理面板需要登录后才能访问</p>
+          <button onClick={() => navigate('/login')} className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-medium">
+            去登录
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   // ============ 仪表盘 ============
   const loadStats = useCallback(async () => {
     try {
